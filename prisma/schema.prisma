@@ -1,0 +1,146 @@
+// Datacrux Smart Sales Platform - Phase 1 Schema
+// Single active client for now, but every table carries clientId
+// so Phase 2 (true multi-tenancy) is a config change, not a rewrite.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Client {
+  id            String   @id @default(cuid())
+  name          String
+  brandingJson  Json     @default("{}")
+  aiSettings    Json     @default("{}")
+  subscription  String   @default("trial") // trial | active | suspended
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  products      Product[]
+  conversations Conversation[]
+  orders        Order[]
+  users         AdminUser[]
+  auditLogs     AuditLog[]
+
+  @@map("clients")
+}
+
+model Product {
+  id          String   @id @default(cuid())
+  clientId    String
+  client      Client   @relation(fields: [clientId], references: [id])
+
+  name        String
+  description String?
+  category    String?
+  price       Decimal  @db.Decimal(10, 2)
+  minPrice    Decimal  @db.Decimal(10, 2) // hard floor - negotiation engine can NEVER go below this
+  available   Boolean  @default(true)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  orderItems  OrderItem[]
+
+  @@index([clientId])
+  @@map("products")
+}
+
+model Conversation {
+  id           String   @id @default(cuid())
+  clientId     String
+  client       Client   @relation(fields: [clientId], references: [id])
+
+  customerId   String?  // external/anonymous customer reference
+  status       String   @default("active") // active | closed | abandoned
+  transcript   Json     @default("[]")     // array of {role, content, timestamp}
+  tokenUsage   Int      @default(0)
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  orders       Order[]
+
+  @@index([clientId])
+  @@map("conversations")
+}
+
+model Order {
+  id             String   @id @default(cuid())
+  clientId       String
+  client         Client   @relation(fields: [clientId], references: [id])
+
+  conversationId String?
+  conversation   Conversation? @relation(fields: [conversationId], references: [id])
+
+  customerName   String?
+  customerPhone  String?
+  customerEmail  String?
+
+  items          OrderItem[]
+
+  subtotal       Decimal  @db.Decimal(10, 2)
+  discountTotal  Decimal  @db.Decimal(10, 2) @default(0)
+  finalAmount    Decimal  @db.Decimal(10, 2)
+
+  status         String   @default("pending") // pending | confirmed | cancelled
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([clientId])
+  @@map("orders")
+}
+
+model OrderItem {
+  id              String   @id @default(cuid())
+  orderId         String
+  order           Order    @relation(fields: [orderId], references: [id])
+
+  productId       String
+  product         Product  @relation(fields: [productId], references: [id])
+
+  quantity        Int
+  listPrice       Decimal  @db.Decimal(10, 2) // price at time of order
+  negotiatedPrice Decimal  @db.Decimal(10, 2) // server-validated final price
+
+  @@map("order_items")
+}
+
+model AdminUser {
+  id           String   @id @default(cuid())
+  clientId     String
+  client       Client   @relation(fields: [clientId], references: [id])
+
+  email        String   @unique
+  passwordHash String
+  role         String   @default("admin") // admin | owner | staff
+  lastLoginAt  DateTime?
+
+  createdAt    DateTime @default(now())
+
+  @@index([clientId])
+  @@map("admin_users")
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  clientId   String?
+  client     Client?  @relation(fields: [clientId], references: [id])
+
+  action     String
+  actorType  String   // user | system | ai
+  actorId    String?
+  ipAddress  String?
+  result     String   // success | failure
+  metadata   Json     @default("{}")
+
+  createdAt  DateTime @default(now())
+
+  @@index([clientId])
+  @@map("audit_logs")
+}
