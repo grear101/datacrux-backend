@@ -9,6 +9,15 @@ export interface ChatMessage {
 // backend decides.
 export const AI_TOOLS = [
   {
+    name: 'list_products',
+    description:
+      'List all available products for this business, with their IDs, names, and list prices. Always call this first if you don\'t already know a product\'s ID.',
+    input_schema: {
+      type: 'object',
+      properties: {},
+    },
+  },
+  {
     name: 'get_product_info',
     description:
       'Look up a product\'s name, description, and list price. Use this to answer questions about what is for sale. This returns the LIST price only - it never returns a negotiated or discounted price.',
@@ -35,7 +44,6 @@ export const AI_TOOLS = [
     },
   },
 ];
-
 export interface ToolUseBlock {
   type: 'tool_use';
   id: string;
