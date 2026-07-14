@@ -60,8 +60,7 @@ export class ConversationService {
       // Claude wants to call one or more tools. Record its request, execute
       // each tool for real, then hand the results back as the next message.
       transcript.push({ role: 'assistant', content: JSON.stringify(content) });
-
-      const toolResults = [];
+const toolResults: { type: string; tool_use_id: string; content: string }[] = [];
       for (const block of toolUseBlocks) {
         const result = await this.executeTool(clientId, block);
         toolResults.push({
