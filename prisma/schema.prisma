@@ -14,6 +14,7 @@ datasource db {
 model Client {
   id            String   @id @default(cuid())
   name          String
+  apiKey        String?  @unique // public-facing key for the customer chat widget - not a login credential
   brandingJson  Json     @default("{}")
   aiSettings    Json     @default("{}")
   subscription  String   @default("trial") // trial | active | suspended

@@ -1,23 +1,18 @@
-import { Body, Controller, Post } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { Body, Controller, Post, UseGuards } from '@nestjs/common';
 import { ConversationService } from './conversation.service';
 import { SendMessageDto } from './dto/send-message.dto';
+import { ApiKeyGuard } from '../auth/api-key.guard';
+import { ApiKeyClient } from '../auth/api-key-client.decorator';
 
 @Controller('conversation')
+@UseGuards(ApiKeyGuard) // customers authenticate with the business's public API key, not a login
 export class ConversationController {
-  constructor(
-    private readonly conversationService: ConversationService,
-    private readonly config: ConfigService,
-  ) {}
+  constructor(private readonly conversationService: ConversationService) {}
 
   @Post('message')
-  async sendMessage(@Body() dto: SendMessageDto) {
-    // Same Phase 1 pattern as the negotiation controller: clientId comes from
-    // server config until the Auth Service exists, never from the request.
-    const clientId = this.config.getOrThrow<string>('ACTIVE_CLIENT_ID');
-
-   return this.conversationService.sendMessage({
-      clientId,
+  async sendMessage(@Body() dto: SendMessageDto, @ApiKeyClient() client: { clientId: string }) {
+    return this.conversationService.sendMessage({
+      clientId: client.clientId,
       conversationId: dto.conversationId,
       customerId: dto.customerId,
       productId: dto.productId,
