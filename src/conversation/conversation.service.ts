@@ -14,10 +14,11 @@ export class ConversationService {
     private readonly negotiationService: NegotiationService,
   ) {}
 
-  async sendMessage(params: {
+async sendMessage(params: {
     clientId: string;
     conversationId?: string;
     customerId?: string;
+    productId?: string;
     message: string;
   }) {
     const { clientId, customerId, message } = params;
@@ -30,8 +31,21 @@ export class ConversationService {
       ? (conversation.transcript as any)
       : [];
 
-    transcript.push({ role: 'user', content: message });
+// If the customer arrived via an ad for a specific product, and this is
+    // a brand-new conversation, prime AMARA with that product's details up
+    // front - so she never needs to call list_products or ask "what are you
+    // interested in?" first.
+    let effectiveMessage = message;
+    if (params.productId && transcript.length === 0) {
+      const product = await this.prisma.product.findFirst({
+        where: { id: params.productId, clientId },
+      });
+      if (product) {
+        effectiveMessage = `[Context: this customer clicked an ad for "${product.name}" (productId: ${product.id}, list price $${Number(product.price)}). They are already interested in this specific product - do not ask what they're interested in or call list_products, just help them with it directly.]\n\nCustomer: ${message}`;
+      }
+    }
 
+transcript.push({ role: 'user', content: effectiveMessage });
     let totalTokens = conversation.tokenUsage;
     let loops = 0;
     let finalReplyText = '';

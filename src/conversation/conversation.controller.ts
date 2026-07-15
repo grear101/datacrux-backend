@@ -16,10 +16,11 @@ export class ConversationController {
     // server config until the Auth Service exists, never from the request.
     const clientId = this.config.getOrThrow<string>('ACTIVE_CLIENT_ID');
 
-    return this.conversationService.sendMessage({
+   return this.conversationService.sendMessage({
       clientId,
       conversationId: dto.conversationId,
       customerId: dto.customerId,
+      productId: dto.productId,
       message: dto.message,
     });
   }

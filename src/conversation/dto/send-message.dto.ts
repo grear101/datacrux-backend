@@ -9,6 +9,10 @@ export class SendMessageDto {
   @IsString()
   customerId?: string;
 
+  @IsOptional()
+  @IsString()
+  productId?: string; // set this when the customer arrives from an ad for a specific product
+
   @IsString()
   @IsNotEmpty()
   message: string;
