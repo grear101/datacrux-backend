@@ -6,6 +6,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { NegotiationModule } from './negotiation/negotiation.module';
 import { AiModule } from './ai/ai.module';
 import { ConversationModule } from './conversation/conversation.module';
+import { AuthModule } from './auth/auth.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { ConversationModule } from './conversation/conversation.module';
     NegotiationModule,
     AiModule,
     ConversationModule,
+    AuthModule,
   ],
   controllers: [AppController],
   providers: [AppService],

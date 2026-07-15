@@ -1,24 +1,18 @@
-import { Body, Controller, Post } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { Body, Controller, Post, UseGuards } from '@nestjs/common';
 import { NegotiationService } from './negotiation.service';
 import { EvaluateNegotiationDto } from './dto/evaluate-negotiation.dto';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { CurrentUser } from '../auth/current-user.decorator';
 
 @Controller('negotiation')
+@UseGuards(JwtAuthGuard)
 export class NegotiationController {
-  constructor(
-    private readonly negotiationService: NegotiationService,
-    private readonly config: ConfigService,
-  ) {}
+  constructor(private readonly negotiationService: NegotiationService) {}
 
   @Post('evaluate')
-  async evaluate(@Body() dto: EvaluateNegotiationDto) {
-    // Phase 1 is single-tenant: clientId comes from server config, not the request,
-    // so there's no attack surface for tenant spoofing before Auth Service exists.
-    // Phase 2 replaces this with clientId extracted from a verified JWT/API key.
-    const clientId = this.config.getOrThrow<string>('ACTIVE_CLIENT_ID');
-
+  async evaluate(@Body() dto: EvaluateNegotiationDto, @CurrentUser() user: { clientId: string }) {
     return this.negotiationService.evaluate({
-      clientId,
+      clientId: user.clientId,
       productId: dto.productId,
       requestedPrice: dto.requestedPrice,
       quantity: dto.quantity,
