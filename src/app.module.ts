@@ -7,6 +7,8 @@ import { NegotiationModule } from './negotiation/negotiation.module';
 import { AiModule } from './ai/ai.module';
 import { ConversationModule } from './conversation/conversation.module';
 import { AuthModule } from './auth/auth.module';
+import { ProductsModule } from './products/products.module';
+import { ClientsModule } from './clients/clients.module';
 
 @Module({
   imports: [
@@ -16,6 +18,8 @@ import { AuthModule } from './auth/auth.module';
     AiModule,
     ConversationModule,
     AuthModule,
+    ProductsModule,
+    ClientsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

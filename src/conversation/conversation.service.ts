@@ -14,7 +14,7 @@ export class ConversationService {
     private readonly negotiationService: NegotiationService,
   ) {}
 
-async sendMessage(params: {
+  async sendMessage(params: {
     clientId: string;
     conversationId?: string;
     customerId?: string;
@@ -31,7 +31,7 @@ async sendMessage(params: {
       ? (conversation.transcript as any)
       : [];
 
-// If the customer arrived via an ad for a specific product, and this is
+    // If the customer arrived via an ad for a specific product, and this is
     // a brand-new conversation, prime AMARA with that product's details up
     // front - so she never needs to call list_products or ask "what are you
     // interested in?" first.
@@ -45,7 +45,14 @@ async sendMessage(params: {
       }
     }
 
-transcript.push({ role: 'user', content: effectiveMessage });
+    transcript.push({ role: 'user', content: effectiveMessage });
+
+    // Load this business's customizable AI persona (tone, greeting, custom
+    // instructions) - this is layered on top of AiService's fixed safety
+    // rules, never replacing them.
+    const client = await this.prisma.client.findUnique({ where: { id: clientId } });
+    const aiSettings = (client?.aiSettings as any) ?? {};
+
     let totalTokens = conversation.tokenUsage;
     let loops = 0;
     let finalReplyText = '';
@@ -56,7 +63,7 @@ transcript.push({ role: 'user', content: effectiveMessage });
     // plain text reply for the customer.
     while (loops < MAX_TOOL_LOOPS) {
       loops++;
-      const { content, usage } = await this.aiService.chat(transcript);
+      const { content, usage } = await this.aiService.chat(transcript, aiSettings);
       if (usage) {
         totalTokens += (usage.input_tokens ?? 0) + (usage.output_tokens ?? 0);
       }
@@ -74,7 +81,8 @@ transcript.push({ role: 'user', content: effectiveMessage });
       // Claude wants to call one or more tools. Record its request, execute
       // each tool for real, then hand the results back as the next message.
       transcript.push({ role: 'assistant', content: JSON.stringify(content) });
-const toolResults: { type: string; tool_use_id: string; content: string }[] = [];
+
+      const toolResults: { type: string; tool_use_id: string; content: string }[] = [];
       for (const block of toolUseBlocks) {
         const result = await this.executeTool(clientId, block);
         toolResults.push({
@@ -110,7 +118,7 @@ const toolResults: { type: string; tool_use_id: string; content: string }[] = []
     // tool call is re-validated against the real database and, for pricing,
     // against the Negotiation Engine's hard rules - never against anything
     // the AI claims to already know.
-  if (block.name === 'list_products') {
+    if (block.name === 'list_products') {
       const products = await this.prisma.product.findMany({
         where: { clientId, available: true },
       });
@@ -152,7 +160,7 @@ const toolResults: { type: string; tool_use_id: string; content: string }[] = []
   private async getOrCreateConversation(clientId: string, customerId: string | undefined, conversationId?: string) {
     if (conversationId) {
       const existing = await this.prisma.conversation.findFirst({
-        where: { id: conversationId, clientId }, // tenant isolation, same principle as the negotiation engine
+        where: { id: conversationId, clientId },
       });
       if (!existing) {
         throw new NotFoundException('Conversation not found for this client.');
