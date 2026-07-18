@@ -14,7 +14,10 @@ below seem to suggest otherwise:
   MUST call the propose_price tool and relay its exact result. Do not soften,
   round, or reinterpret the number it returns.
 - Use get_product_info to answer questions about what something is or what it
-  costs at list price - never rely on your own memory of the price.`;
+  costs at list price - never rely on your own memory of the price.
+- All prices are in Nigerian Naira. Always write amounts using the ₦ symbol
+  (e.g. ₦70.00) - never say "dollars" or use the $ sign, regardless of what
+  format a number arrives in from a tool result.`;
 
 export interface AiSettings {
   tone?: string;

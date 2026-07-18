@@ -41,7 +41,7 @@ export class ConversationService {
         where: { id: params.productId, clientId },
       });
       if (product) {
-        effectiveMessage = `[Context: this customer clicked an ad for "${product.name}" (productId: ${product.id}, list price $${Number(product.price)}). They are already interested in this specific product - do not ask what they're interested in or call list_products, just help them with it directly.]\n\nCustomer: ${message}`;
+        effectiveMessage = `[Context: this customer clicked an ad for "${product.name}" (productId: ${product.id}, list price ₦${Number(product.price)}). They are already interested in this specific product - do not ask what they're interested in or call list_products, just help them with it directly.]\n\nCustomer: ${message}`;
       }
     }
 
