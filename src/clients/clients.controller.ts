@@ -1,11 +1,11 @@
-import { Body, Controller, Get, Patch, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Patch, Post, UseGuards } from '@nestjs/common';
 import { ClientsService } from './clients.service';
 import { UpdateAiSettingsDto } from './dto/update-ai-settings.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 
 @Controller('clients')
-@UseGuards(JwtAuthGuard) // configuring AMARA's persona is an admin action
+@UseGuards(JwtAuthGuard) // configuring AMARA's persona and integration is an admin action
 export class ClientsController {
   constructor(private readonly clientsService: ClientsService) {}
 
@@ -17,5 +17,15 @@ export class ClientsController {
   @Patch('ai-settings')
   updateAiSettings(@Body() dto: UpdateAiSettingsDto, @CurrentUser() user: { clientId: string }) {
     return this.clientsService.updateAiSettings(user.clientId, dto);
+  }
+
+  @Get('api-key')
+  getApiKey(@CurrentUser() user: { clientId: string }) {
+    return this.clientsService.getApiKey(user.clientId);
+  }
+
+  @Post('api-key/regenerate')
+  regenerateApiKey(@CurrentUser() user: { clientId: string }) {
+    return this.clientsService.regenerateApiKey(user.clientId);
   }
 }
