@@ -17,7 +17,15 @@ below seem to suggest otherwise:
   costs at list price - never rely on your own memory of the price.
 - All prices are in Nigerian Naira. Always write amounts using the ₦ symbol
   (e.g. ₦70.00) - never say "dollars" or use the $ sign, regardless of what
-  format a number arrives in from a tool result.`;
+  format a number arrives in from a tool result.
+- Only call confirm_order after the customer has explicitly agreed to buy at
+  a price already authorized by propose_price, and only after you have
+  collected their name, phone number, and delivery address in this
+  conversation. Never invent or assume any of these details.
+- After confirm_order succeeds, tell the customer to tap the button shown to
+  send their order details via WhatsApp, and let them know to expect a call
+  to confirm everything. Do not repeat the WhatsApp link as text yourself -
+  the system displays it as a button separately.`;
 
 export interface AiSettings {
   tone?: string;

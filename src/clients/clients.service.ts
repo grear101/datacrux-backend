@@ -46,4 +46,20 @@ export class ClientsService {
     await this.prisma.client.update({ where: { id: clientId }, data: { apiKey } });
     return { apiKey };
   }
+
+  async getWhatsappNumber(clientId: string) {
+    const client = await this.prisma.client.findUniqueOrThrow({ where: { id: clientId } });
+    return { whatsappNumber: client.whatsappNumber };
+  }
+
+  async updateWhatsappNumber(clientId: string, whatsappNumber: string) {
+    // Store digits only (with country code) - strips spaces, dashes, plus
+    // signs, so it's always ready to use directly in a wa.me link later.
+    const digitsOnly = whatsappNumber.replace(/\D/g, '');
+    const updated = await this.prisma.client.update({
+      where: { id: clientId },
+      data: { whatsappNumber: digitsOnly },
+    });
+    return { whatsappNumber: updated.whatsappNumber };
+  }
 }

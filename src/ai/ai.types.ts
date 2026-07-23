@@ -43,7 +43,25 @@ export const AI_TOOLS = [
       required: ['productId', 'requestedPrice', 'quantity'],
     },
   },
+  {
+    name: 'confirm_order',
+    description:
+      'Confirm an order ONLY after the customer has explicitly agreed to buy at a specific price that the pricing system already authorized via propose_price, AND you have collected their full name, phone number, and delivery address in this conversation. Never call this based on a price you have not already confirmed through propose_price. The system will re-check the price again before finalizing - if it does not match, trust the system\'s result and tell the customer if anything changed.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        productId: { type: 'string' },
+        quantity: { type: 'number' },
+        agreedPrice: { type: 'number', description: 'The exact price the customer agreed to, as already authorized by propose_price' },
+        customerName: { type: 'string' },
+        customerPhone: { type: 'string' },
+        deliveryAddress: { type: 'string' },
+      },
+      required: ['productId', 'quantity', 'agreedPrice', 'customerName', 'customerPhone', 'deliveryAddress'],
+    },
+  },
 ];
+
 export interface ToolUseBlock {
   type: 'tool_use';
   id: string;

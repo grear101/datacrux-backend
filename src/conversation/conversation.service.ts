@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AiService } from '../ai/ai.service';
 import { NegotiationService } from '../negotiation/negotiation.service';
+import { OrdersService } from '../orders/orders.service';
 import { ChatMessage } from '../ai/ai.types';
 
 const MAX_TOOL_LOOPS = 4; // safety cap so a confused model can't loop forever
@@ -12,6 +13,7 @@ export class ConversationService {
     private readonly prisma: PrismaService,
     private readonly aiService: AiService,
     private readonly negotiationService: NegotiationService,
+    private readonly ordersService: OrdersService,
   ) {}
 
   async sendMessage(params: {
@@ -56,11 +58,12 @@ export class ConversationService {
     let totalTokens = conversation.tokenUsage;
     let loops = 0;
     let finalReplyText = '';
+    let orderLink: string | null = null; // set only if confirm_order succeeds this turn
 
     // The tool-call loop: keep going as long as Claude wants to call a tool
-    // (look up a product, or propose a price), execute it against real
-    // backend logic, and feed the result back - until Claude produces a
-    // plain text reply for the customer.
+    // (look up a product, propose a price, or confirm an order), execute it
+    // against real backend logic, and feed the result back - until Claude
+    // produces a plain text reply for the customer.
     while (loops < MAX_TOOL_LOOPS) {
       loops++;
       const { content, usage } = await this.aiService.chat(transcript, aiSettings);
@@ -84,7 +87,10 @@ export class ConversationService {
 
       const toolResults: { type: string; tool_use_id: string; content: string }[] = [];
       for (const block of toolUseBlocks) {
-        const result = await this.executeTool(clientId, block);
+        const result = await this.executeTool(clientId, params.conversationId ?? conversation.id, block);
+        if (block.name === 'confirm_order' && result && (result as any).whatsappLink) {
+          orderLink = (result as any).whatsappLink;
+        }
         toolResults.push({
           type: 'tool_result',
           tool_use_id: block.id,
@@ -107,13 +113,17 @@ export class ConversationService {
       },
     });
 
-    return {
+    const response: { conversationId: string; reply: string; orderLink?: string } = {
       conversationId: conversation.id,
       reply: finalReplyText,
     };
+    if (orderLink) {
+      response.orderLink = orderLink;
+    }
+    return response;
   }
 
-  private async executeTool(clientId: string, block: { name: string; input: any }) {
+  private async executeTool(clientId: string, conversationId: string, block: { name: string; input: any }) {
     // This is the enforcement point: no matter what the AI asked for, every
     // tool call is re-validated against the real database and, for pricing,
     // against the Negotiation Engine's hard rules - never against anything
@@ -151,6 +161,19 @@ export class ConversationService {
         productId: block.input.productId,
         requestedPrice: block.input.requestedPrice,
         quantity: block.input.quantity,
+      });
+    }
+
+    if (block.name === 'confirm_order') {
+      return this.ordersService.confirmOrder({
+        clientId,
+        conversationId,
+        productId: block.input.productId,
+        quantity: block.input.quantity,
+        agreedPrice: block.input.agreedPrice,
+        customerName: block.input.customerName,
+        customerPhone: block.input.customerPhone,
+        deliveryAddress: block.input.deliveryAddress,
       });
     }
 

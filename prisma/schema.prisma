@@ -15,6 +15,7 @@ model Client {
   id            String   @id @default(cuid())
   name          String
   apiKey        String?  @unique // public-facing key for the customer chat widget - not a login credential
+  whatsappNumber String? // the business's own WhatsApp number, digits only with country code (e.g. 2348012345678) - where order summaries get sent via wa.me links
   brandingJson  Json     @default("{}")
   aiSettings    Json     @default("{}")
   subscription  String   @default("trial") // trial | active | suspended
@@ -81,6 +82,7 @@ model Order {
   customerName   String?
   customerPhone  String?
   customerEmail  String?
+  deliveryAddress String?
 
   items          OrderItem[]
 
