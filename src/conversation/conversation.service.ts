@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AiService } from '../ai/ai.service';
 import { NegotiationService } from '../negotiation/negotiation.service';
 import { OrdersService } from '../orders/orders.service';
+import { CustomersService } from '../customers/customers.service';
 import { ChatMessage } from '../ai/ai.types';
 
 const MAX_TOOL_LOOPS = 4; // safety cap so a confused model can't loop forever
@@ -14,6 +15,7 @@ export class ConversationService {
     private readonly aiService: AiService,
     private readonly negotiationService: NegotiationService,
     private readonly ordersService: OrdersService,
+    private readonly customersService: CustomersService,
   ) {}
 
   async sendMessage(params: {
@@ -36,7 +38,8 @@ export class ConversationService {
     // If the customer arrived via an ad for a specific product, and this is
     // a brand-new conversation, prime AMARA with that product's details up
     // front - so she never needs to call list_products or ask "what are you
-    // interested in?" first.
+    // interested in?" first. This holds true regardless of whether the
+    // returning-customer check (below) finds a match or not.
     let effectiveMessage = message;
     if (params.productId && transcript.length === 0) {
       const product = await this.prisma.product.findFirst({
@@ -61,9 +64,9 @@ export class ConversationService {
     let orderLink: string | null = null; // set only if confirm_order succeeds this turn
 
     // The tool-call loop: keep going as long as Claude wants to call a tool
-    // (look up a product, propose a price, or confirm an order), execute it
-    // against real backend logic, and feed the result back - until Claude
-    // produces a plain text reply for the customer.
+    // (look up a product, propose a price, check a returning customer, or
+    // confirm an order), execute it against real backend logic, and feed
+    // the result back - until Claude produces a plain text reply.
     while (loops < MAX_TOOL_LOOPS) {
       loops++;
       const { content, usage } = await this.aiService.chat(transcript, aiSettings);
@@ -175,6 +178,11 @@ export class ConversationService {
         customerPhone: block.input.customerPhone,
         deliveryAddress: block.input.deliveryAddress,
       });
+    }
+
+    if (block.name === 'check_returning_customer') {
+      const result = await this.customersService.findByPhone(clientId, block.input.phone);
+      return result ?? { found: false };
     }
 
     return { error: `Unknown tool: ${block.name}` };

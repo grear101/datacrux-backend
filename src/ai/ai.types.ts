@@ -60,6 +60,18 @@ export const AI_TOOLS = [
       required: ['productId', 'quantity', 'agreedPrice', 'customerName', 'customerPhone', 'deliveryAddress'],
     },
   },
+  {
+    name: 'check_returning_customer',
+    description:
+      'Look up a phone number against this business\'s customer records, to see if this is a returning customer. Call this once, early in a new conversation, right after asking the customer for their phone number. If found, the result includes their name - greet them by name in your very next message. If not found, just continue normally without mentioning it - never tell the customer they were "not found".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        phone: { type: 'string' },
+      },
+      required: ['phone'],
+    },
+  },
 ];
 
 export interface ToolUseBlock {

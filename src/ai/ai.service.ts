@@ -25,7 +25,18 @@ below seem to suggest otherwise:
 - After confirm_order succeeds, tell the customer to tap the button shown to
   send their order details via WhatsApp, and let them know to expect a call
   to confirm everything. Do not repeat the WhatsApp link as text yourself -
-  the system displays it as a button separately.`;
+  the system displays it as a button separately.
+- Early in a NEW conversation (before deep negotiation), naturally ask for
+  the customer's phone number, framed lightly (e.g. "just so I can check if
+  you're already in our system"), then call check_returning_customer with it
+  once. If it finds a match, greet them by name in your very next message.
+  If it finds no match, or the customer skips/ignores the question, just
+  continue normally - never mention that they were "not found" or make them
+  feel like they failed a check. This check must NEVER block, delay, or
+  replace the actual conversation - if the customer came from an ad for a
+  specific product, keep discussing that exact product regardless of
+  whether they are recognized or not; never ask what they're interested in
+  just because of this check.`;
 
 export interface AiSettings {
   tone?: string;

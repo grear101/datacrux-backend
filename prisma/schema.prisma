@@ -1,6 +1,4 @@
-// Datacrux Smart Sales Platform - Phase 1 Schema
-// Single active client for now, but every table carries clientId
-// so Phase 2 (true multi-tenancy) is a config change, not a rewrite.
+// Datacrux Smart Sales Platform - Phase 1/2 Schema
 
 generator client {
   provider = "prisma-client-js"
@@ -27,6 +25,7 @@ model Client {
   orders        Order[]
   users         AdminUser[]
   auditLogs     AuditLog[]
+  customers     Customer[]
 
   @@map("clients")
 }
@@ -40,7 +39,7 @@ model Product {
   description String?
   category    String?
   price       Decimal  @db.Decimal(10, 2)
-  minPrice    Decimal  @db.Decimal(10, 2) // hard floor - negotiation engine can NEVER go below this
+  minPrice    Decimal  @db.Decimal(10, 2)
   available   Boolean  @default(true)
 
   createdAt   DateTime @default(now())
@@ -57,9 +56,9 @@ model Conversation {
   clientId     String
   client       Client   @relation(fields: [clientId], references: [id])
 
-  customerId   String?  // external/anonymous customer reference
-  status       String   @default("active") // active | closed | abandoned
-  transcript   Json     @default("[]")     // array of {role, content, timestamp}
+  customerId   String?
+  status       String   @default("active")
+  transcript   Json     @default("[]")
   tokenUsage   Int      @default(0)
 
   createdAt    DateTime @default(now())
@@ -90,7 +89,7 @@ model Order {
   discountTotal  Decimal  @db.Decimal(10, 2) @default(0)
   finalAmount    Decimal  @db.Decimal(10, 2)
 
-  status         String   @default("pending") // pending | confirmed | cancelled
+  status         String   @default("pending")
 
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -108,8 +107,8 @@ model OrderItem {
   product         Product  @relation(fields: [productId], references: [id])
 
   quantity        Int
-  listPrice       Decimal  @db.Decimal(10, 2) // price at time of order
-  negotiatedPrice Decimal  @db.Decimal(10, 2) // server-validated final price
+  listPrice       Decimal  @db.Decimal(10, 2)
+  negotiatedPrice Decimal  @db.Decimal(10, 2)
 
   @@map("order_items")
 }
@@ -121,7 +120,7 @@ model AdminUser {
 
   email        String   @unique
   passwordHash String
-  role         String   @default("admin") // admin | owner | staff
+  role         String   @default("admin")
   lastLoginAt  DateTime?
 
   createdAt    DateTime @default(now())
@@ -136,14 +135,36 @@ model AuditLog {
   client     Client?  @relation(fields: [clientId], references: [id])
 
   action     String
-  actorType  String   // user | system | ai
+  actorType  String
   actorId    String?
   ipAddress  String?
-  result     String   // success | failure
+  result     String
   metadata   Json     @default("{}")
 
   createdAt  DateTime @default(now())
 
   @@index([clientId])
   @@map("audit_logs")
+}
+
+model Customer {
+  id           String   @id @default(cuid())
+  clientId     String
+  client       Client   @relation(fields: [clientId], references: [id])
+
+  phone        String   // digits only, used to look up returning customers
+  name         String?
+  orderCount   Int      @default(0)
+  lastOrderAt  DateTime?
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // A phone number identifies one customer per business, but the same
+  // phone number can belong to different customers across different
+  // businesses (tenant isolation) - hence the compound unique constraint
+  // instead of a globally unique phone field.
+  @@unique([clientId, phone])
+  @@index([clientId])
+  @@map("customers")
 }

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NegotiationService } from '../negotiation/negotiation.service';
+import { CustomersService } from '../customers/customers.service';
 
 export interface ConfirmOrderInput {
   clientId: string;
@@ -18,6 +19,7 @@ export class OrdersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly negotiationService: NegotiationService,
+    private readonly customersService: CustomersService,
   ) {}
 
   async confirmOrder(input: ConfirmOrderInput) {
@@ -72,6 +74,13 @@ export class OrdersService {
       },
     });
 
+    // This is the ONLY place a Customer record gets created/updated - the
+    // one moment we know for certain a real name and phone belong together,
+    // tied to an actual completed transaction. The returning-customer check
+    // earlier in the conversation only ever reads from what orders like
+    // this one have already built up.
+    await this.customersService.recordOrder(input.clientId, input.customerPhone, input.customerName);
+
     const client = await this.prisma.client.findUnique({ where: { id: input.clientId } });
     const whatsappLink = this.buildWhatsappLink(client?.whatsappNumber ?? null, {
       orderId: order.id,
@@ -86,8 +95,8 @@ export class OrdersService {
     return {
       orderId: order.id,
       finalPrice: authoritativePrice,
-      priceWasAdjusted: authoritativePrice !== input.agreedPrice, // lets AMARA know to mention it if the "agreed" price got corrected
-      whatsappLink, // null if the business hasn't set a WhatsApp number yet
+      priceWasAdjusted: authoritativePrice !== input.agreedPrice,
+      whatsappLink,
     };
   }
 
@@ -105,7 +114,6 @@ export class OrdersService {
   ): string | null {
     if (!whatsappNumber) return null;
 
-    // wa.me requires digits only (country code + number, no +, spaces, or dashes)
     const digitsOnly = whatsappNumber.replace(/\D/g, '');
     if (!digitsOnly) return null;
 
