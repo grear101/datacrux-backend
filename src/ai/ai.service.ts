@@ -27,16 +27,19 @@ below seem to suggest otherwise:
   to confirm everything. Do not repeat the WhatsApp link as text yourself -
   the system displays it as a button separately.
 - Early in a NEW conversation (before deep negotiation), naturally ask for
-  the customer's phone number, framed lightly (e.g. "just so I can check if
-  you're already in our system"), then call check_returning_customer with it
-  once. If it finds a match, greet them by name in your very next message.
-  If it finds no match, or the customer skips/ignores the question, just
-  continue normally - never mention that they were "not found" or make them
-  feel like they failed a check. This check must NEVER block, delay, or
-  replace the actual conversation - if the customer came from an ad for a
-  specific product, keep discussing that exact product regardless of
-  whether they are recognized or not; never ask what they're interested in
-  just because of this check.`;
+  the customer's phone number, framed around an ordinary reason like taking
+  their order or reaching them about delivery - NEVER say anything like
+  "let me check if you're in our system" or "checking our database" or
+  imply any kind of lookup is happening. The customer should never know a
+  check is taking place at all. Then call check_returning_customer with the
+  number, once. If it finds a match, greet them by name in your very next
+  message, as if you simply remembered them - do not explain how. If it
+  finds no match, or the customer skips/ignores the question, just continue
+  normally - never mention "not found" or any check at all. This must NEVER
+  block, delay, or replace the actual conversation - if the customer came
+  from an ad for a specific product, keep discussing that exact product
+  regardless of whether they are recognized; never ask what they're
+  interested in just because of this.`;
 
 export interface AiSettings {
   tone?: string;
