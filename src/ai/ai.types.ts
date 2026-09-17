@@ -20,7 +20,7 @@ export const AI_TOOLS = [
   {
     name: 'get_product_info',
     description:
-      'Look up a product\'s name, description, and list price. Use this to answer questions about what is for sale. This returns the LIST price only - it never returns a negotiated or discounted price.',
+      'Look up a product\'s name, description, list price, whether it has a photo, and whether it is a service (vs a physical product). Use this to answer questions about what is for sale. This returns the LIST price only - it never returns a negotiated or discounted price.',
     input_schema: {
       type: 'object',
       properties: {
@@ -70,6 +70,20 @@ export const AI_TOOLS = [
         phone: { type: 'string' },
       },
       required: ['phone'],
+    },
+  },
+  {
+    name: 'request_human_handover',
+    description:
+      'Call this when the customer asks to speak to a real person, a human, or a staff member, or seems to need help beyond what you can resolve. Write a concise summary of what has happened in this conversation so far (what they wanted, what price if any was discussed, and any name/phone already given). This prepares a message for the business\'s team - it does not create an order or change any price.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        summary: { type: 'string', description: 'A concise summary of this conversation so far, for a human to quickly catch up' },
+        customerName: { type: 'string' },
+        customerPhone: { type: 'string' },
+      },
+      required: ['summary'],
     },
   },
 ];

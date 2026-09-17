@@ -26,6 +26,8 @@ export class ProductsService {
         price: dto.price,
         minPrice: dto.minPrice,
         available: dto.available ?? true,
+        imageUrl: dto.imageUrl,
+        isService: dto.isService ?? false,
       },
     });
   }

@@ -41,6 +41,8 @@ model Product {
   price       Decimal  @db.Decimal(10, 2)
   minPrice    Decimal  @db.Decimal(10, 2)
   available   Boolean  @default(true)
+  imageUrl    String?  // hosted photo of the product/service, shown to customers in chat
+  isService   Boolean  @default(false) // true = a service (ask for date/time instead of delivery address)
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

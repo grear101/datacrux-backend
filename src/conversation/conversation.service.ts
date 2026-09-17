@@ -62,6 +62,8 @@ export class ConversationService {
     let loops = 0;
     let finalReplyText = '';
     let orderLink: string | null = null; // set only if confirm_order succeeds this turn
+    let imageUrl: string | null = null; // set if get_product_info returns a photo
+    let handoverLink: string | null = null; // set only if request_human_handover succeeds this turn
 
     // The tool-call loop: keep going as long as Claude wants to call a tool
     // (look up a product, propose a price, check a returning customer, or
@@ -94,6 +96,12 @@ export class ConversationService {
         if (block.name === 'confirm_order' && result && (result as any).whatsappLink) {
           orderLink = (result as any).whatsappLink;
         }
+        if (block.name === 'get_product_info' && result && (result as any).imageUrl) {
+          imageUrl = (result as any).imageUrl;
+        }
+        if (block.name === 'request_human_handover' && result && (result as any).whatsappLink) {
+          handoverLink = (result as any).whatsappLink;
+        }
         toolResults.push({
           type: 'tool_result',
           tool_use_id: block.id,
@@ -116,12 +124,24 @@ export class ConversationService {
       },
     });
 
-    const response: { conversationId: string; reply: string; orderLink?: string } = {
+    const response: {
+      conversationId: string;
+      reply: string;
+      orderLink?: string;
+      imageUrl?: string;
+      handoverLink?: string;
+    } = {
       conversationId: conversation.id,
       reply: finalReplyText,
     };
     if (orderLink) {
       response.orderLink = orderLink;
+    }
+    if (imageUrl) {
+      response.imageUrl = imageUrl;
+    }
+    if (handoverLink) {
+      response.handoverLink = handoverLink;
     }
     return response;
   }
@@ -139,6 +159,7 @@ export class ConversationService {
         id: p.id,
         name: p.name,
         listPrice: Number(p.price),
+        isService: p.isService,
       }));
     }
 
@@ -155,6 +176,8 @@ export class ConversationService {
         description: product.description,
         listPrice: Number(product.price),
         available: product.available,
+        imageUrl: product.imageUrl,
+        isService: product.isService,
       };
     }
 
@@ -185,7 +208,34 @@ export class ConversationService {
       return result ?? { found: false };
     }
 
+    if (block.name === 'request_human_handover') {
+      const client = await this.prisma.client.findUnique({ where: { id: clientId } });
+      const whatsappLink = this.buildHandoverWhatsappLink(client?.whatsappNumber ?? null, {
+        summary: block.input.summary,
+        customerName: block.input.customerName,
+        customerPhone: block.input.customerPhone,
+      });
+      return { whatsappLink };
+    }
+
     return { error: `Unknown tool: ${block.name}` };
+  }
+
+  private buildHandoverWhatsappLink(
+    whatsappNumber: string | null,
+    details: { summary: string; customerName?: string; customerPhone?: string },
+  ): string | null {
+    if (!whatsappNumber) return null;
+    const digitsOnly = whatsappNumber.replace(/\D/g, '');
+    if (!digitsOnly) return null;
+
+    const message =
+      `Customer wants to speak to a human\n\n` +
+      `Summary: ${details.summary}\n` +
+      (details.customerName ? `Name: ${details.customerName}\n` : '') +
+      (details.customerPhone ? `Phone: ${details.customerPhone}\n` : '');
+
+    return `https://wa.me/${digitsOnly}?text=${encodeURIComponent(message)}`;
   }
 
   private async getOrCreateConversation(clientId: string, customerId: string | undefined, conversationId?: string) {
