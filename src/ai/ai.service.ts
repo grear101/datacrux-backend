@@ -69,6 +69,7 @@ export interface AiSettings {
   greeting?: string;
   businessDescription?: string;
   customInstructions?: string;
+  deliveryFeeRange?: string;
 }
 
 function buildSystemPrompt(aiSettings?: AiSettings): string {
@@ -87,6 +88,11 @@ function buildSystemPrompt(aiSettings?: AiSettings): string {
   }
   if (aiSettings?.greeting) {
     parts.push(`When starting a new conversation, greet the customer along the lines of: "${aiSettings.greeting}"`);
+  }
+  if (aiSettings?.deliveryFeeRange) {
+    parts.push(
+      `Delivery fee: when delivery comes up, mention it typically costs ${aiSettings.deliveryFeeRange} depending on location, and that the exact fee will be confirmed by the delivery team when they reach out. Never state a single exact delivery fee yourself, and never include a delivery amount in confirm_order's price - this range is informational only, separate from the product price.`,
+    );
   }
   if (aiSettings?.customInstructions) {
     parts.push(`Additional business instructions: ${aiSettings.customInstructions}`);

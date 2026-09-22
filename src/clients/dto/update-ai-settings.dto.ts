@@ -23,5 +23,10 @@ export class UpdateAiSettingsDto {
   @IsOptional()
   @IsString()
   @MaxLength(500)
-  customInstructions?: string; // e.g. "always mention we offer free shipping over $50"
+  customInstructions?: string; // e.g. "always mention we offer free shipping over ₦50,000"
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  deliveryFeeRange?: string; // e.g. "₦500 - ₦2,000" - a rough estimate AMARA can quote; the real fee is settled by the delivery team on contact, never treated as an exact number
 }
