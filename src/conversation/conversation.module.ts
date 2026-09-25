@@ -5,9 +5,10 @@ import { AiModule } from '../ai/ai.module';
 import { NegotiationModule } from '../negotiation/negotiation.module';
 import { OrdersModule } from '../orders/orders.module';
 import { CustomersModule } from '../customers/customers.module';
+import { HandoversModule } from '../handovers/handovers.module';
 
 @Module({
-  imports: [AiModule, NegotiationModule, OrdersModule, CustomersModule],
+  imports: [AiModule, NegotiationModule, OrdersModule, CustomersModule, HandoversModule],
   controllers: [ConversationController],
   providers: [ConversationService],
 })

@@ -10,7 +10,7 @@ import { AuthModule } from './auth/auth.module';
 import { ProductsModule } from './products/products.module';
 import { ClientsModule } from './clients/clients.module';
 import { OrdersModule } from './orders/orders.module';
-import { CustomersModule } from './customers/customers.module';
+import { HandoversModule } from './handovers/handovers.module';
 
 @Module({
   imports: [
@@ -23,7 +23,7 @@ import { CustomersModule } from './customers/customers.module';
     ProductsModule,
     ClientsModule,
     OrdersModule,
-    CustomersModule,
+    HandoversModule,
   ],
   controllers: [AppController],
   providers: [AppService],

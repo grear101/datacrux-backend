@@ -4,6 +4,7 @@ import { AiService } from '../ai/ai.service';
 import { NegotiationService } from '../negotiation/negotiation.service';
 import { OrdersService } from '../orders/orders.service';
 import { CustomersService } from '../customers/customers.service';
+import { HandoversService } from '../handovers/handovers.service';
 import { ChatMessage } from '../ai/ai.types';
 
 const MAX_TOOL_LOOPS = 4; // safety cap so a confused model can't loop forever
@@ -16,6 +17,7 @@ export class ConversationService {
     private readonly negotiationService: NegotiationService,
     private readonly ordersService: OrdersService,
     private readonly customersService: CustomersService,
+    private readonly handoversService: HandoversService,
   ) {}
 
   async sendMessage(params: {
@@ -66,9 +68,10 @@ export class ConversationService {
     let handoverLink: string | null = null; // set only if request_human_handover succeeds this turn
 
     // The tool-call loop: keep going as long as Claude wants to call a tool
-    // (look up a product, propose a price, check a returning customer, or
-    // confirm an order), execute it against real backend logic, and feed
-    // the result back - until Claude produces a plain text reply.
+    // (look up a product, propose a price, check a returning customer,
+    // confirm an order, or request a human handover), execute it against
+    // real backend logic, and feed the result back - until Claude produces
+    // a plain text reply.
     while (loops < MAX_TOOL_LOOPS) {
       loops++;
       const { content, usage } = await this.aiService.chat(transcript, aiSettings);
@@ -209,33 +212,21 @@ export class ConversationService {
     }
 
     if (block.name === 'request_human_handover') {
-      const client = await this.prisma.client.findUnique({ where: { id: clientId } });
-      const whatsappLink = this.buildHandoverWhatsappLink(client?.whatsappNumber ?? null, {
+      // Now delegates to HandoversService instead of just building a link
+      // inline - this is the one change from before: every handover request
+      // gets a permanent DB record (surfaced in the admin panel's Handovers
+      // page) in addition to the WhatsApp link, so nothing gets lost if the
+      // WhatsApp message itself is missed.
+      return this.handoversService.createHandover({
+        clientId,
+        conversationId,
         summary: block.input.summary,
         customerName: block.input.customerName,
         customerPhone: block.input.customerPhone,
       });
-      return { whatsappLink };
     }
 
     return { error: `Unknown tool: ${block.name}` };
-  }
-
-  private buildHandoverWhatsappLink(
-    whatsappNumber: string | null,
-    details: { summary: string; customerName?: string; customerPhone?: string },
-  ): string | null {
-    if (!whatsappNumber) return null;
-    const digitsOnly = whatsappNumber.replace(/\D/g, '');
-    if (!digitsOnly) return null;
-
-    const message =
-      `Customer wants to speak to a human\n\n` +
-      `Summary: ${details.summary}\n` +
-      (details.customerName ? `Name: ${details.customerName}\n` : '') +
-      (details.customerPhone ? `Phone: ${details.customerPhone}\n` : '');
-
-    return `https://wa.me/${digitsOnly}?text=${encodeURIComponent(message)}`;
   }
 
   private async getOrCreateConversation(clientId: string, customerId: string | undefined, conversationId?: string) {

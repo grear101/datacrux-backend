@@ -14,6 +14,11 @@ export interface ConfirmOrderInput {
   deliveryAddress: string;
 }
 
+export interface OrderDateFilter {
+  startDate?: string; // YYYY-MM-DD, inclusive, interpreted as the start of that day
+  endDate?: string;   // YYYY-MM-DD, inclusive, interpreted as the end of that day
+}
+
 @Injectable()
 export class OrdersService {
   constructor(
@@ -21,6 +26,33 @@ export class OrdersService {
     private readonly negotiationService: NegotiationService,
     private readonly customersService: CustomersService,
   ) {}
+
+  /**
+   * Lists orders for this business only, most recent first, optionally
+   * narrowed to a date range. Same tenant-isolation principle as
+   * everything else: scoped to clientId at the query level, never trusting
+   * anything other than the authenticated admin's own client.
+   */
+  async findAll(clientId: string, filter: OrderDateFilter = {}) {
+    const where: any = { clientId };
+
+    if (filter.startDate || filter.endDate) {
+      where.createdAt = {};
+      if (filter.startDate) {
+        where.createdAt.gte = new Date(`${filter.startDate}T00:00:00.000Z`);
+      }
+      if (filter.endDate) {
+        // end date is inclusive of the whole day, not just midnight
+        where.createdAt.lte = new Date(`${filter.endDate}T23:59:59.999Z`);
+      }
+    }
+
+    return this.prisma.order.findMany({
+      where,
+      include: { items: { include: { product: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
 
   async confirmOrder(input: ConfirmOrderInput) {
     // The single most important line in this whole service: re-run the

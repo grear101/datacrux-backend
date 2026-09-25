@@ -1,19 +1,19 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
+import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { OrdersService } from './orders.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 
 @Controller('orders')
 @UseGuards(JwtAuthGuard) // viewing orders is an admin action
 export class OrdersController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly ordersService: OrdersService) {}
 
   @Get()
-  async findAll(@CurrentUser() user: { clientId: string }) {
-    return this.prisma.order.findMany({
-      where: { clientId: user.clientId },
-      include: { items: { include: { product: true } } },
-      orderBy: { createdAt: 'desc' },
-    });
+  async findAll(
+    @CurrentUser() user: { clientId: string },
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ) {
+    return this.ordersService.findAll(user.clientId, { startDate, endDate });
   }
 }

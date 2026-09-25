@@ -26,6 +26,7 @@ model Client {
   users         AdminUser[]
   auditLogs     AuditLog[]
   customers     Customer[]
+  handoverRequests HandoverRequest[]
 
   @@map("clients")
 }
@@ -169,4 +170,21 @@ model Customer {
   @@unique([clientId, phone])
   @@index([clientId])
   @@map("customers")
+}
+
+model HandoverRequest {
+  id             String   @id @default(cuid())
+  clientId       String
+  client         Client   @relation(fields: [clientId], references: [id])
+
+  conversationId String?
+  summary        String   // AI-written summary of the conversation so far, for the team taking over
+  customerName   String?
+  customerPhone  String?
+  status         String   @default("pending") // pending | contacted | resolved
+
+  createdAt      DateTime @default(now())
+
+  @@index([clientId])
+  @@map("handover_requests")
 }
