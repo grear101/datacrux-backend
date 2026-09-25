@@ -5,6 +5,8 @@ import { NegotiationService } from '../negotiation/negotiation.service';
 import { OrdersService } from '../orders/orders.service';
 import { CustomersService } from '../customers/customers.service';
 import { HandoversService } from '../handovers/handovers.service';
+import { ProductsService } from '../products/products.service';
+import { ClientsService } from '../clients/clients.service';
 import { ChatMessage } from '../ai/ai.types';
 
 const MAX_TOOL_LOOPS = 4; // safety cap so a confused model can't loop forever
@@ -18,6 +20,8 @@ export class ConversationService {
     private readonly ordersService: OrdersService,
     private readonly customersService: CustomersService,
     private readonly handoversService: HandoversService,
+    private readonly productsService: ProductsService,
+    private readonly clientsService: ClientsService,
   ) {}
 
   async sendMessage(params: {
@@ -56,9 +60,10 @@ export class ConversationService {
 
     // Load this business's customizable AI persona (tone, greeting, custom
     // instructions) - this is layered on top of AiService's fixed safety
-    // rules, never replacing them.
-    const client = await this.prisma.client.findUnique({ where: { id: clientId } });
-    const aiSettings = (client?.aiSettings as any) ?? {};
+    // rules, never replacing them. Read on every single message, so this
+    // goes through ClientsService's cached lookup rather than the database
+    // directly.
+    const aiSettings = await this.clientsService.getAiSettings(clientId);
 
     let totalTokens = conversation.tokenUsage;
     let loops = 0;
@@ -155,9 +160,11 @@ export class ConversationService {
     // against the Negotiation Engine's hard rules - never against anything
     // the AI claims to already know.
     if (block.name === 'list_products') {
-      const products = await this.prisma.product.findMany({
-        where: { clientId, available: true },
-      });
+      // Cached (60s) inside ProductsService - this tool gets called on
+      // nearly every conversation turn, and a brief cache is safe here
+      // since it's only used to describe what's available, never to
+      // determine an actual price a customer pays.
+      const products = await this.productsService.findAvailable(clientId);
       return products.map((p) => ({
         id: p.id,
         name: p.name,
@@ -212,11 +219,6 @@ export class ConversationService {
     }
 
     if (block.name === 'request_human_handover') {
-      // Now delegates to HandoversService instead of just building a link
-      // inline - this is the one change from before: every handover request
-      // gets a permanent DB record (surfaced in the admin panel's Handovers
-      // page) in addition to the WhatsApp link, so nothing gets lost if the
-      // WhatsApp message itself is missed.
       return this.handoversService.createHandover({
         clientId,
         conversationId,

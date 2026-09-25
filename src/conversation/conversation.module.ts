@@ -6,9 +6,19 @@ import { NegotiationModule } from '../negotiation/negotiation.module';
 import { OrdersModule } from '../orders/orders.module';
 import { CustomersModule } from '../customers/customers.module';
 import { HandoversModule } from '../handovers/handovers.module';
+import { ProductsModule } from '../products/products.module';
+import { ClientsModule } from '../clients/clients.module';
 
 @Module({
-  imports: [AiModule, NegotiationModule, OrdersModule, CustomersModule, HandoversModule],
+  imports: [
+    AiModule,
+    NegotiationModule,
+    OrdersModule,
+    CustomersModule,
+    HandoversModule,
+    ProductsModule,
+    ClientsModule,
+  ],
   controllers: [ConversationController],
   providers: [ConversationService],
 })
