@@ -1,7 +1,9 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_FILTER } from '@nestjs/core';
+import { SentryModule } from '@sentry/nestjs/setup';
+import { SentryGlobalFilter } from '@sentry/nestjs/setup';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
@@ -19,6 +21,10 @@ import { AnalyticsModule } from './analytics/analytics.module';
 
 @Module({
   imports: [
+    // Sentry's own setup module - Sentry's docs specifically call for this
+    // to be the FIRST import in the whole app, so it's registered before
+    // anything else has a chance to run.
+    SentryModule.forRoot(),
     ConfigModule.forRoot({ isGlobal: true }),
     ThrottlerModule.forRoot([
       {
@@ -29,8 +35,6 @@ import { AnalyticsModule } from './analytics/analytics.module';
     ]),
     PrismaModule,
     RedisModule,
-    // @Global() - registered once here, injectable anywhere (OrdersService,
-    // HandoversService, ...) without needing to import it in each module.
     NotificationsModule,
     NegotiationModule,
     AiModule,
@@ -44,6 +48,13 @@ import { AnalyticsModule } from './analytics/analytics.module';
   ],
   controllers: [AppController],
   providers: [
+    // Reports every unhandled error, app-wide, to Sentry. Per Sentry's own
+    // docs, this needs to be registered before any other exception
+    // filters - there aren't any others here, so it's simply added first.
+    {
+      provide: APP_FILTER,
+      useClass: SentryGlobalFilter,
+    },
     AppService,
     {
       provide: APP_GUARD,

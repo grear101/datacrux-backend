@@ -1,3 +1,8 @@
+// Import this first! This sets up Sentry error/performance monitoring
+// before any other module in the app loads, which is required for Sentry
+// to automatically instrument everything else correctly.
+import './instrument';
+
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
