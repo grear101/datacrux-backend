@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NegotiationService } from '../negotiation/negotiation.service';
 import { CustomersService } from '../customers/customers.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 export interface ConfirmOrderInput {
   clientId: string;
@@ -25,6 +26,7 @@ export class OrdersService {
     private readonly prisma: PrismaService,
     private readonly negotiationService: NegotiationService,
     private readonly customersService: CustomersService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   /**
@@ -122,6 +124,19 @@ export class OrdersService {
       customerName: input.customerName,
       customerPhone: input.customerPhone,
       deliveryAddress: input.deliveryAddress,
+    });
+
+    // Fire off the email notification last, after everything that actually
+    // matters (the order itself, the customer record, the WhatsApp link)
+    // has already succeeded. NotificationsService swallows its own
+    // failures internally, so a broken email provider can never prevent an
+    // order from completing.
+    await this.notificationsService.notifyNewOrder(input.clientId, {
+      orderId: order.id,
+      customerName: input.customerName,
+      productName: product.name,
+      quantity: input.quantity,
+      finalAmount,
     });
 
     return {

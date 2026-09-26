@@ -6,6 +6,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
 import { RedisModule } from './redis/redis.module';
+import { NotificationsModule } from './notifications/notifications.module';
 import { NegotiationModule } from './negotiation/negotiation.module';
 import { AiModule } from './ai/ai.module';
 import { ConversationModule } from './conversation/conversation.module';
@@ -28,6 +29,9 @@ import { AnalyticsModule } from './analytics/analytics.module';
     ]),
     PrismaModule,
     RedisModule,
+    // @Global() - registered once here, injectable anywhere (OrdersService,
+    // HandoversService, ...) without needing to import it in each module.
+    NotificationsModule,
     NegotiationModule,
     AiModule,
     ConversationModule,
