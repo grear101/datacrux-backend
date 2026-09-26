@@ -7,6 +7,7 @@ export class AppController {
 
   @Get()
   getHello(): string {
+    throw new Error('Sentry test - safe to ignore');
     return this.appService.getHello();
   }
 }
