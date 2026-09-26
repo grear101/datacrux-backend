@@ -14,13 +14,11 @@ import { ProductsModule } from './products/products.module';
 import { ClientsModule } from './clients/clients.module';
 import { OrdersModule } from './orders/orders.module';
 import { HandoversModule } from './handovers/handovers.module';
+import { AnalyticsModule } from './analytics/analytics.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
-    // Default rate limit for every route: 100 requests per 60 seconds,
-    // tracked per IP address. Individual routes (like /auth/login) can
-    // override this with a stricter limit using @Throttle().
     ThrottlerModule.forRoot([
       {
         name: 'default',
@@ -29,9 +27,6 @@ import { HandoversModule } from './handovers/handovers.module';
       },
     ]),
     PrismaModule,
-    // @Global() - registered once here, injectable anywhere in the app
-    // afterwards without needing to import RedisModule in every module
-    // that wants to use it.
     RedisModule,
     NegotiationModule,
     AiModule,
@@ -41,6 +36,7 @@ import { HandoversModule } from './handovers/handovers.module';
     ClientsModule,
     OrdersModule,
     HandoversModule,
+    AnalyticsModule,
   ],
   controllers: [AppController],
   providers: [

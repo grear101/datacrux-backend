@@ -27,6 +27,10 @@ export class NegotiationService {
   private async logDecision(request: NegotiationRequest, result: NegotiationResult) {
     // Every negotiation decision is audited - approved or rejected - so pricing
     // disputes and abuse patterns can always be traced after the fact.
+    // listPrice and discountPercent are logged alongside finalPrice so the
+    // Analytics Service can compute an accurate average discount later,
+    // without needing to re-join against the product's CURRENT price
+    // (which may have changed since this decision was made).
     await this.prisma.auditLog.create({
       data: {
         clientId: request.clientId,
@@ -38,6 +42,8 @@ export class NegotiationService {
           requestedPrice: request.requestedPrice,
           quantity: request.quantity,
           finalPrice: result.finalPrice,
+          listPrice: result.listPrice,
+          discountPercent: result.discountPercent,
           reason: result.reason,
         },
       },
