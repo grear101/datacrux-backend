@@ -34,11 +34,4 @@ jobs:
           DATABASE_URL: 'postgresql://placeholder:placeholder@localhost:5432/placeholder'
           JWT_SECRET: 'placeholder-secret-for-ci-only'
 
-      # Only reached if both steps above succeeded - this is the actual
-      # gate. RAILWAY_TOKEN should be a project-scoped token (not an
-      # account-wide one), stored as a GitHub Actions secret.
-      - name: Deploy to Railway
-        if: success()
-        run: npx @railway/cli up --service datacrux-backend --detach
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+
