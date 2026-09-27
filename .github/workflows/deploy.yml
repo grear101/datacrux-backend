@@ -39,6 +39,6 @@ jobs:
       # account-wide one), stored as a GitHub Actions secret.
       - name: Deploy to Railway
         if: success()
-                run: npx @railway/cli up --service datacrux-backend --detach
+        run: npx @railway/cli up --service datacrux-backend --detach
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
