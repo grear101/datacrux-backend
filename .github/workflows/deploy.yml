@@ -33,5 +33,3 @@ jobs:
         env:
           DATABASE_URL: 'postgresql://placeholder:placeholder@localhost:5432/placeholder'
           JWT_SECRET: 'placeholder-secret-for-ci-only'
-
-
