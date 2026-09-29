@@ -17,6 +17,10 @@ model Client {
   brandingJson  Json     @default("{}")
   aiSettings    Json     @default("{}")
   subscription  String   @default("trial") // trial | active | suspended
+  plan          String?  // standard | premium | enterprise (or "internal" for the Datacrux team's own account)
+  conversationLimit Int? // max NEW conversations per calendar month; null = unlimited
+  trialEndsAt   DateTime? // a trial only expires if this is set; null = never expires
+  setupFeePaid  Boolean  @default(false)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -60,9 +64,10 @@ model Conversation {
   client       Client   @relation(fields: [clientId], references: [id])
 
   customerId   String?
-  status       String   @default("active")
+  status       String   @default("active") // active | completed (order placed) | closed
   transcript   Json     @default("[]")
   tokenUsage   Int      @default(0)
+  messageCount Int      @default(0) // customer messages so far, used to cap runaway sessions
 
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -70,6 +75,7 @@ model Conversation {
   orders       Order[]
 
   @@index([clientId])
+  @@index([clientId, createdAt])
   @@map("conversations")
 }
 
@@ -123,7 +129,7 @@ model AdminUser {
 
   email        String   @unique
   passwordHash String
-  role         String   @default("admin")
+  role         String   @default("admin") // owner | admin | superadmin (Datacrux team only)
   lastLoginAt  DateTime?
 
   createdAt    DateTime @default(now())

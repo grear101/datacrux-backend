@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
 
 export class SendMessageDto {
   @IsOptional()
@@ -13,7 +13,10 @@ export class SendMessageDto {
   @IsString()
   productId?: string; // set this when the customer arrives from an ad for a specific product
 
+  // Capped so nobody can flood the AI with enormous pasted text - every
+  // character sent to Claude costs money.
   @IsString()
   @IsNotEmpty()
+  @MaxLength(1000)
   message: string;
 }

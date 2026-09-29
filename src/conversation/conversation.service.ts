@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, GoneException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AiService } from '../ai/ai.service';
 import { NegotiationService } from '../negotiation/negotiation.service';
@@ -8,8 +8,25 @@ import { HandoversService } from '../handovers/handovers.service';
 import { ProductsService } from '../products/products.service';
 import { ClientsService } from '../clients/clients.service';
 import { ChatMessage } from '../ai/ai.types';
+import { startOfMonthLagos, unavailableBody } from '../common/subscription.util';
 
 const MAX_TOOL_LOOPS = 4; // safety cap so a confused model can't loop forever
+const MAX_MESSAGES_PER_CONVERSATION = 40; // caps a single runaway session
+const STALE_CONVERSATION_HOURS = 24; // a session this old can't be resumed - start a new one instead
+
+// Shown once, right when an order is confirmed - deliberately fixed text
+// rather than letting the AI improvise the closing line, so every customer
+// gets the same clean send-off.
+const ORDER_CLOSING_MESSAGE =
+  "Thanks for patronising us! Your order is confirmed - tap the button below to send your details via WhatsApp so the team can follow up.";
+
+// Shown for any message sent to a chat that's already finished (either
+// after an order, or because it hit the conversation's message cap).
+const ALREADY_CLOSED_MESSAGE =
+  'This chat has ended - thanks again! Please start a new chat for anything else.';
+
+const MESSAGE_CAP_CLOSING_MESSAGE =
+  "This conversation has reached its limit for one session. Please start a new chat to continue - we're happy to help!";
 
 @Injectable()
 export class ConversationService {
@@ -35,6 +52,12 @@ export class ConversationService {
 
     const conversation = await this.getOrCreateConversation(clientId, customerId, params.conversationId);
 
+    // A chat that already finished (order placed, or hit its message cap)
+    // never reaches the AI again - this costs nothing and answers instantly.
+    if (conversation.status !== 'active') {
+      return { conversationId: conversation.id, reply: ALREADY_CLOSED_MESSAGE };
+    }
+
     // transcript is stored as Json in the DB - it's our source of truth for
     // conversation history, not anything held in memory between requests.
     const transcript: ChatMessage[] = Array.isArray(conversation.transcript)
@@ -57,6 +80,7 @@ export class ConversationService {
     }
 
     transcript.push({ role: 'user', content: effectiveMessage });
+    const newMessageCount = conversation.messageCount + 1;
 
     // Load this business's customizable AI persona (tone, greeting, custom
     // instructions) - this is layered on top of AiService's fixed safety
@@ -71,6 +95,7 @@ export class ConversationService {
     let orderLink: string | null = null; // set only if confirm_order succeeds this turn
     let imageUrl: string | null = null; // set if get_product_info returns a photo
     let handoverLink: string | null = null; // set only if request_human_handover succeeds this turn
+    let orderConfirmedThisTurn = false;
 
     // The tool-call loop: keep going as long as Claude wants to call a tool
     // (look up a product, propose a price, check a returning customer,
@@ -103,6 +128,7 @@ export class ConversationService {
         const result = await this.executeTool(clientId, params.conversationId ?? conversation.id, block);
         if (block.name === 'confirm_order' && result && (result as any).whatsappLink) {
           orderLink = (result as any).whatsappLink;
+          orderConfirmedThisTurn = true;
         }
         if (block.name === 'get_product_info' && result && (result as any).imageUrl) {
           imageUrl = (result as any).imageUrl;
@@ -124,11 +150,28 @@ export class ConversationService {
         "Sorry, I'm having trouble finishing that thought - could you rephrase your question?";
     }
 
+    // An order just went through - override whatever AMARA was about to
+    // say with the fixed closing message, and end the chat. Every message
+    // sent to this conversation after this point gets ALREADY_CLOSED_MESSAGE
+    // instead, with no further AI calls.
+    let nextStatus: 'active' | 'completed' | 'closed' = 'active';
+    if (orderConfirmedThisTurn) {
+      finalReplyText = ORDER_CLOSING_MESSAGE;
+      nextStatus = 'completed';
+    } else if (newMessageCount >= MAX_MESSAGES_PER_CONVERSATION) {
+      // Hit the per-session message cap - close it the same way, just with
+      // a different reason and no order link.
+      finalReplyText = MESSAGE_CAP_CLOSING_MESSAGE;
+      nextStatus = 'closed';
+    }
+
     await this.prisma.conversation.update({
       where: { id: conversation.id },
       data: {
         transcript: transcript as any,
         tokenUsage: totalTokens,
+        messageCount: newMessageCount,
+        status: nextStatus,
       },
     });
 
@@ -239,7 +282,37 @@ export class ConversationService {
       if (!existing) {
         throw new NotFoundException('Conversation not found for this client.');
       }
+
+      // A session that's gone quiet for too long can't just pick back up -
+      // the widget is expected to catch this specific error and retry
+      // without a conversationId, starting fresh.
+      const hoursSinceUpdate = (Date.now() - existing.updatedAt.getTime()) / (1000 * 60 * 60);
+      if (hoursSinceUpdate > STALE_CONVERSATION_HOURS) {
+        throw new GoneException({
+          statusCode: 410,
+          code: 'CONVERSATION_EXPIRED',
+          message: 'This chat session has expired. Please start a new conversation.',
+        });
+      }
+
       return existing;
+    }
+
+    // Starting a brand-new conversation - this is the only place the
+    // monthly limit applies. A business already mid-conversation is never
+    // cut off partway through, only stopped from starting another one.
+    const client = await this.prisma.client.findUnique({
+      where: { id: clientId },
+      select: { conversationLimit: true },
+    });
+
+    if (client?.conversationLimit != null) {
+      const usedThisMonth = await this.prisma.conversation.count({
+        where: { clientId, createdAt: { gte: startOfMonthLagos() } },
+      });
+      if (usedThisMonth >= client.conversationLimit) {
+        throw new ForbiddenException(unavailableBody('limit_reached'));
+      }
     }
 
     return this.prisma.conversation.create({

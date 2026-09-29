@@ -52,6 +52,26 @@ export class NotificationsService {
     await this.sendToClientAdmins(clientId, subject, html);
   }
 
+  async notifyAccountSuspended(clientId: string) {
+    const subject = 'Your Datacrux account has been suspended';
+    const html = `
+      <p>Your AMARA chat assistant has been temporarily suspended.</p>
+      <p>Your admin panel and order history are still available - only the
+      customer-facing chat widget is paused. Please reach out to the
+      Datacrux team if you have any questions.</p>
+    `;
+    await this.sendToClientAdmins(clientId, subject, html);
+  }
+
+  async notifyAccountReactivated(clientId: string) {
+    const subject = 'Your Datacrux account is active again';
+    const html = `
+      <p>Good news - your AMARA chat assistant has been reactivated and is
+      answering customers again.</p>
+    `;
+    await this.sendToClientAdmins(clientId, subject, html);
+  }
+
   private async sendToClientAdmins(clientId: string, subject: string, html: string) {
     try {
       const admins = await this.prisma.adminUser.findMany({
@@ -65,9 +85,9 @@ export class NotificationsService {
       await this.sendEmail(recipients, subject, html);
     } catch (err) {
       // Notifications are a convenience, never something that should be
-      // allowed to break the real action (an order, a handover) that
-      // triggered them - so any failure here is logged, not thrown, and
-      // never surfaced to the customer or blocks anything else.
+      // allowed to break the real action (an order, a handover, a
+      // suspension) that triggered them - so any failure here is logged,
+      // not thrown, and never surfaced to the customer or admin.
       console.warn('Notification failed to send (continuing anyway):', (err as Error).message);
     }
   }
