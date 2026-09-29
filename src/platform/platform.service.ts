@@ -72,7 +72,12 @@ export class PlatformService {
 
   async listClients() {
     const clients = await this.prisma.client.findMany({
-      where: { plan: { not: 'internal' } }, // never list the Datacrux team's own account here
+            // Never list the Datacrux team's own internal account here. Written
+      // as an explicit OR (rather than plan: { not: 'internal' }) because
+      // a plain not-equal check on a nullable column also excludes rows
+      // where plan is null/empty - which would have hidden every business
+      // that predates this feature, including both pilot businesses.
+      where: { OR: [{ plan: null }, { plan: { not: 'internal' } }] },
       include: { users: { select: { email: true } } },
       orderBy: { createdAt: 'desc' },
     });
