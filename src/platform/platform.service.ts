@@ -3,6 +3,7 @@ import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationsSchedulerService } from '../notifications/notifications-scheduler.service';
 import { OnboardClientDto } from './dto/onboard-client.dto';
 import { UpdateClientDto } from './dto/update-client.dto';
 import { effectiveStatus, startOfMonthLagos } from '../common/subscription.util';
@@ -14,6 +15,7 @@ export class PlatformService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notificationsService: NotificationsService,
+    private readonly notificationsScheduler: NotificationsSchedulerService,
   ) {}
 
   async onboardClient(dto: OnboardClientDto, actorId: string) {
@@ -72,7 +74,7 @@ export class PlatformService {
 
   async listClients() {
     const clients = await this.prisma.client.findMany({
-            // Never list the Datacrux team's own internal account here. Written
+      // Never list the Datacrux team's own internal account here. Written
       // as an explicit OR (rather than plan: { not: 'internal' }) because
       // a plain not-equal check on a nullable column also excludes rows
       // where plan is null/empty - which would have hidden every business
@@ -192,6 +194,17 @@ export class PlatformService {
     await this.audit(actorId, admin.clientId, 'platform.resetPassword', { adminUserId, adminEmail: admin.email });
 
     return { adminUserId, email: admin.email };
+  }
+
+  /**
+   * Manually runs the same daily usage/trial check the 8am cron job runs
+   * on its own - for testing, so you don't have to wait until tomorrow
+   * morning to see if it works. Safe to call more than once: every email
+   * it might send is still governed by the same once-per-threshold rule.
+   */
+  async runNotificationsCheck() {
+    await this.notificationsScheduler.runDailyChecks();
+    return { ok: true, message: 'Daily notification check ran. Check Resend/your test inbox and the notification_logs table.' };
   }
 
   /** Conversations this month, all-time, and total tokens - one clientId, or every client at once. */

@@ -31,6 +31,7 @@ model Client {
   auditLogs     AuditLog[]
   customers     Customer[]
   handoverRequests HandoverRequest[]
+  notificationLogs NotificationLog[]
 
   @@map("clients")
 }
@@ -193,4 +194,27 @@ model HandoverRequest {
 
   @@index([clientId])
   @@map("handover_requests")
+}
+
+model NotificationLog {
+  id         String   @id @default(cuid())
+  clientId   String
+  client     Client   @relation(fields: [clientId], references: [id])
+
+  // usage_80 | usage_100 | trial_ending | trial_expired
+  type       String
+  // What makes this notification unique within its type: for usage
+  // types, the calendar month (e.g. "2026-09"); for trial types, the
+  // trial's own end date - so extending a trial naturally allows the
+  // reminder to fire again for the new deadline.
+  periodKey  String
+
+  sentAt     DateTime @default(now())
+
+  // The real enforcement of "send this at most once" - a duplicate
+  // insert attempt fails, which the code below treats as "already sent,
+  // skip it" rather than as an error.
+  @@unique([clientId, type, periodKey])
+  @@index([clientId])
+  @@map("notification_logs")
 }

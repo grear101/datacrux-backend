@@ -36,4 +36,11 @@ export class PlatformController {
   resetPassword(@Body() dto: ResetPasswordDto, @CurrentUser() user: { userId: string }) {
     return this.platformService.resetPassword(dto.adminUserId, dto.newPassword, user.userId);
   }
+
+  // Testing aid: runs the same daily usage/trial check the 8am cron job
+  // runs on its own, right now, instead of waiting until tomorrow morning.
+  @Post('run-notifications-check')
+  runNotificationsCheck() {
+    return this.platformService.runNotificationsCheck();
+  }
 }

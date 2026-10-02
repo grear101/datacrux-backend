@@ -72,6 +72,44 @@ export class NotificationsService {
     await this.sendToClientAdmins(clientId, subject, html);
   }
 
+  async notifyUsageThreshold(
+    clientId: string,
+    businessName: string,
+    details: { percent: 80 | 100; used: number; limit: number },
+  ) {
+    const subject =
+      details.percent === 100
+        ? `${businessName} has reached its monthly conversation limit`
+        : `${businessName} is at 80% of its monthly conversation limit`;
+    const html =
+      details.percent === 100
+        ? `
+          <p><strong>${businessName}</strong> has used all ${details.limit} conversations included in its plan this month (${details.used} / ${details.limit}).</p>
+          <p>New chats are paused for this business until the 1st of next month, or until the plan is upgraded.</p>
+        `
+        : `
+          <p><strong>${businessName}</strong> has used ${details.used} of its ${details.limit} monthly conversations (80%).</p>
+          <p>This is just a heads-up - nothing is blocked yet.</p>
+        `;
+    await this.sendToClientAdminsAndTeam(clientId, subject, html);
+  }
+
+  async notifyTrialEnding(clientId: string, businessName: string, daysLeft: number, trialEndsAt: Date) {
+    const subject = `${businessName}'s trial ends in ${daysLeft} day${daysLeft === 1 ? '' : 's'}`;
+    const html = `
+      <p><strong>${businessName}</strong>'s trial ends on ${trialEndsAt.toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' })}.</p>
+    `;
+    await this.sendToClientAdminsAndTeam(clientId, subject, html);
+  }
+
+  async notifyTrialExpired(clientId: string, businessName: string) {
+    const subject = `${businessName}'s trial has ended`;
+    const html = `
+      <p><strong>${businessName}</strong>'s trial has ended - their chat widget is now paused until the account is moved to a paid plan.</p>
+    `;
+    await this.sendToClientAdminsAndTeam(clientId, subject, html);
+  }
+
   private async sendToClientAdmins(clientId: string, subject: string, html: string) {
     try {
       const admins = await this.prisma.adminUser.findMany({
@@ -92,6 +130,24 @@ export class NotificationsService {
     }
   }
 
+  /** Same as above, but also copies every Datacrux team (superadmin) account. */
+  private async sendToClientAdminsAndTeam(clientId: string, subject: string, html: string) {
+    try {
+      const [clientAdmins, teamAdmins] = await Promise.all([
+        this.prisma.adminUser.findMany({ where: { clientId }, select: { email: true } }),
+        this.prisma.adminUser.findMany({ where: { role: 'superadmin' }, select: { email: true } }),
+      ]);
+      const recipients = [...clientAdmins, ...teamAdmins].map((a) => a.email).filter(Boolean);
+      if (recipients.length === 0) {
+        return;
+      }
+      // De-duplicated, in case a team account is somehow also a client admin.
+      await this.sendEmail([...new Set(recipients)], subject, html);
+    } catch (err) {
+      console.warn('Notification failed to send (continuing anyway):', (err as Error).message);
+    }
+  }
+
   private async sendEmail(to: string[], subject: string, html: string) {
     const apiKey = this.config.get<string>('RESEND_API_KEY');
     if (!apiKey) {
@@ -104,6 +160,18 @@ export class NotificationsService {
     // later via NOTIFICATIONS_FROM_EMAIL, with no code changes needed.
     const fromAddress = this.config.get<string>('NOTIFICATIONS_FROM_EMAIL') ?? 'Datacrux AMARA <onboarding@resend.dev>';
 
+    // Test mode: while this is set, EVERY email this service sends goes
+    // to this one address instead of its real recipients - so testing
+    // never accidentally emails a real business, and fake .test seed
+    // addresses never cause a silent failure. The real recipient list is
+    // kept visible in the email itself. Removing this variable (not
+    // changing any code) switches everything back to real delivery.
+    const testOverride = this.config.get<string>('NOTIFICATIONS_TEST_OVERRIDE_EMAIL');
+    const actualTo = testOverride ? [testOverride] : to;
+    const actualHtml = testOverride
+      ? `<p style="color:#b45309;font-size:12px;background:#fef3c7;padding:8px;border-radius:6px">TEST MODE - this would normally have gone to: ${to.join(', ')}</p>${html}`
+      : html;
+
     const response = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
@@ -112,9 +180,9 @@ export class NotificationsService {
       },
       body: JSON.stringify({
         from: fromAddress,
-        to,
+        to: actualTo,
         subject,
-        html,
+        html: actualHtml,
       }),
     });
 

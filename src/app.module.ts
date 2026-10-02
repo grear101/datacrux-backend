@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD, APP_FILTER } from '@nestjs/core';
 import { SentryModule } from '@sentry/nestjs/setup';
@@ -24,6 +25,10 @@ import { PlatformModule } from './platform/platform.module';
   imports: [
     SentryModule.forRoot(),
     ConfigModule.forRoot({ isGlobal: true }),
+    // Enables @Cron() decorators anywhere in the app - the daily usage/
+    // trial notification check (in NotificationsSchedulerService) needs
+    // this registered here to actually run.
+    ScheduleModule.forRoot(),
     ThrottlerModule.forRoot([
       {
         name: 'default',
