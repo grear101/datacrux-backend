@@ -154,6 +154,7 @@ export class NotificationsService {
       console.warn('RESEND_API_KEY is not configured - skipping email notification.');
       return;
     }
+    console.log(`[sendEmail] Attempting to send "${subject}" to: ${to.join(', ')}`);
 
     // Defaults to Resend's own test sender, which works immediately with
     // no domain setup - a business's own verified domain can be added
@@ -188,7 +189,10 @@ export class NotificationsService {
 
     if (!response.ok) {
       const errText = await response.text();
+      console.warn(`[sendEmail] Resend responded with an error: ${response.status} ${errText}`);
       throw new Error(`Resend API error: ${errText}`);
     }
+    const resendResult = await response.json().catch(() => null);
+    console.log(`[sendEmail] Resend accepted it. Response: ${JSON.stringify(resendResult)}`);
   }
 }

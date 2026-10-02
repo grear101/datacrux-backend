@@ -81,17 +81,21 @@ export class NotificationsSchedulerService {
 
   private async checkTrial(client: { id: string; name: string; subscription: string; trialEndsAt: Date | null }) {
     if (client.subscription !== 'trial' || !client.trialEndsAt) {
+      this.logger.log(`[trial-check] ${client.name}: skipped (subscription=${client.subscription}, trialEndsAt=${client.trialEndsAt})`);
       return;
     }
 
     const periodKey = client.trialEndsAt.toISOString(); // a new trial end date = a fresh set of reminders
     const now = new Date();
     const daysLeft = Math.ceil((client.trialEndsAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+    this.logger.log(`[trial-check] ${client.name}: trialEndsAt=${client.trialEndsAt.toISOString()}, now=${now.toISOString()}, daysLeft=${daysLeft}`);
 
     if (client.trialEndsAt.getTime() < now.getTime()) {
       if (await this.alreadyLogged(client.id, 'trial_expired', periodKey)) {
+        this.logger.log(`[trial-check] ${client.name}: trial_expired already logged for this period, skipping`);
         return;
       }
+      this.logger.log(`[trial-check] ${client.name}: sending trial_expired email now`);
       await this.notificationsService.notifyTrialExpired(client.id, client.name);
       await this.logSent(client.id, 'trial_expired', periodKey);
       return;
@@ -99,10 +103,14 @@ export class NotificationsSchedulerService {
 
     if (daysLeft <= 3) {
       if (await this.alreadyLogged(client.id, 'trial_ending', periodKey)) {
+        this.logger.log(`[trial-check] ${client.name}: trial_ending already logged for this period, skipping`);
         return;
       }
+      this.logger.log(`[trial-check] ${client.name}: sending trial_ending email now (daysLeft=${daysLeft})`);
       await this.notificationsService.notifyTrialEnding(client.id, client.name, daysLeft, client.trialEndsAt);
       await this.logSent(client.id, 'trial_ending', periodKey);
+    } else {
+      this.logger.log(`[trial-check] ${client.name}: daysLeft=${daysLeft} is above the 3-day threshold, nothing to send`);
     }
   }
 
