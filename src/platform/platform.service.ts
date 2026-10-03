@@ -10,6 +10,13 @@ import { effectiveStatus, startOfMonthLagos } from '../common/subscription.util'
 
 const DEFAULT_TRIAL_DAYS = 7;
 
+// Excludes only the Datacrux team's own internal account. Written as an
+// explicit OR (rather than plan: { not: 'internal' }) because a plain
+// not-equal check on a nullable column also excludes rows where plan is
+// null/empty - which would hide every business that predates this
+// feature, including both original pilot businesses.
+const NON_INTERNAL_FILTER = { OR: [{ plan: null }, { plan: { not: 'internal' } }] };
+
 @Injectable()
 export class PlatformService {
   constructor(
@@ -74,12 +81,7 @@ export class PlatformService {
 
   async listClients() {
     const clients = await this.prisma.client.findMany({
-      // Never list the Datacrux team's own internal account here. Written
-      // as an explicit OR (rather than plan: { not: 'internal' }) because
-      // a plain not-equal check on a nullable column also excludes rows
-      // where plan is null/empty - which would have hidden every business
-      // that predates this feature, including both pilot businesses.
-      where: { OR: [{ plan: null }, { plan: { not: 'internal' } }] },
+      where: NON_INTERNAL_FILTER,
       include: { users: { select: { email: true } } },
       orderBy: { createdAt: 'desc' },
     });
@@ -167,10 +169,6 @@ export class PlatformService {
 
     await this.audit(actorId, clientId, 'platform.updateClient', { changes: dto });
 
-    // Suspend/reactivate are significant enough events to email the
-    // business about immediately, rather than waiting for anything
-    // time-based - those (usage warnings, trial reminders) are handled by
-    // the separate daily scheduled job.
     if (dto.subscription === 'suspended' && !wasSuspended) {
       await this.notificationsService.notifyAccountSuspended(clientId);
     } else if (wasSuspended && dto.subscription && dto.subscription !== 'suspended') {
@@ -189,22 +187,137 @@ export class PlatformService {
     const passwordHash = await bcrypt.hash(newPassword, 10);
     await this.prisma.adminUser.update({ where: { id: adminUserId }, data: { passwordHash } });
 
-    // The password itself is never written anywhere, including here - only
-    // the fact that a reset happened, by whom, and for which account.
     await this.audit(actorId, admin.clientId, 'platform.resetPassword', { adminUserId, adminEmail: admin.email });
 
     return { adminUserId, email: admin.email };
   }
 
-  /**
-   * Manually runs the same daily usage/trial check the 8am cron job runs
-   * on its own - for testing, so you don't have to wait until tomorrow
-   * morning to see if it works. Safe to call more than once: every email
-   * it might send is still governed by the same once-per-threshold rule.
-   */
   async runNotificationsCheck() {
     await this.notificationsScheduler.runDailyChecks();
     return { ok: true, message: 'Daily notification check ran. Check Resend/your test inbox and the notification_logs table.' };
+  }
+
+  /**
+   * The cross-business owner dashboard: totals across every real business
+   * (never the Datacrux team's own internal account), plus a few
+   * computed highlights. Nothing here is AI-generated - every number and
+   * highlight is plain, deterministic math, so it's fast, free, and
+   * always exactly right.
+   */
+  async getOverview(days: number) {
+    const since = new Date();
+    since.setDate(since.getDate() - days);
+    since.setHours(0, 0, 0, 0);
+
+    const previousSince = new Date(since);
+    previousSince.setDate(previousSince.getDate() - days);
+
+    const [clients, orders, previousPeriodRevenue, conversations, negotiationLogs, handoverCount] = await Promise.all([
+      this.prisma.client.findMany({
+        where: NON_INTERNAL_FILTER,
+        select: { id: true, name: true, subscription: true, trialEndsAt: true, conversationLimit: true },
+      }),
+      this.prisma.order.findMany({
+        where: { client: NON_INTERNAL_FILTER, createdAt: { gte: since } },
+        select: { finalAmount: true },
+      }),
+      this.prisma.order.aggregate({
+        where: { client: NON_INTERNAL_FILTER, createdAt: { gte: previousSince, lt: since } },
+        _sum: { finalAmount: true },
+      }),
+      this.prisma.conversation.findMany({
+        where: { client: NON_INTERNAL_FILTER, createdAt: { gte: since } },
+        select: { tokenUsage: true, customerId: true },
+      }),
+      this.prisma.auditLog.findMany({
+        where: { client: NON_INTERNAL_FILTER, action: 'negotiation.evaluate', createdAt: { gte: since } },
+        select: { result: true, metadata: true },
+      }),
+      this.prisma.handoverRequest.count({
+        where: { client: NON_INTERNAL_FILTER, createdAt: { gte: since } },
+      }),
+    ]);
+
+    // Businesses by status
+    const businessCounts = { active: 0, trial: 0, trialExpired: 0, suspended: 0, total: clients.length };
+    for (const c of clients) {
+      const status = effectiveStatus(c);
+      if (status === 'active') businessCounts.active++;
+      else if (status === 'trial') businessCounts.trial++;
+      else if (status === 'trial_expired') businessCounts.trialExpired++;
+      else if (status === 'suspended') businessCounts.suspended++;
+    }
+
+    // Revenue, and its trend vs. the immediately preceding period of the
+    // same length (e.g. this 30 days vs. the 30 days before that).
+    const totalRevenue = orders.reduce((sum, o) => sum + Number(o.finalAmount), 0);
+    const previousRevenue = Number(previousPeriodRevenue._sum.finalAmount ?? 0);
+    const percentChange =
+      previousRevenue > 0 ? Math.round(((totalRevenue - previousRevenue) / previousRevenue) * 1000) / 10 : null;
+
+    const totalConversations = conversations.length;
+    const totalTokens = conversations.reduce((sum, c) => sum + c.tokenUsage, 0);
+    const uniqueCustomers = new Set(conversations.map((c) => c.customerId).filter(Boolean)).size;
+
+    const negotiationAttempts = negotiationLogs.length;
+    const approvedCount = negotiationLogs.filter((l) => l.result === 'success').length;
+    const discountPercents = negotiationLogs
+      .map((l) => (l.metadata as any)?.discountPercent)
+      .filter((d): d is number => typeof d === 'number' && d > 0);
+    const avgDiscountPercent = discountPercents.length
+      ? Math.round((discountPercents.reduce((a, b) => a + b, 0) / discountPercents.length) * 100) / 100
+      : 0;
+
+    const conversionRate = totalConversations > 0 ? Math.round((orders.length / totalConversations) * 10000) / 100 : 0;
+    const handoverRate = totalConversations > 0 ? Math.round((handoverCount / totalConversations) * 10000) / 100 : 0;
+
+    // Highlight: businesses at 80%+ of their monthly limit. Always based
+    // on the current calendar month, independent of the days selector
+    // above - the limit itself is inherently monthly, so "near the
+    // limit" wouldn't mean anything measured over a different window.
+    const usageMap = await this.usageByClient();
+    const businessesNearLimit = clients
+      .filter((c) => c.conversationLimit != null)
+      .map((c) => ({
+        id: c.id,
+        name: c.name,
+        usedThisMonth: usageMap.get(c.id)?.thisMonth ?? 0,
+        limit: c.conversationLimit as number,
+      }))
+      .filter((c) => c.usedThisMonth / c.limit >= 0.8)
+      .sort((a, b) => b.usedThisMonth / b.limit - a.usedThisMonth / a.limit);
+
+    // Highlight: trials ending within 3 days.
+    const now = new Date();
+    const trialsEndingSoon = clients
+      .filter((c) => c.subscription === 'trial' && c.trialEndsAt && c.trialEndsAt.getTime() > now.getTime())
+      .map((c) => ({
+        id: c.id,
+        name: c.name,
+        trialEndsAt: c.trialEndsAt as Date,
+        daysLeft: Math.ceil((c.trialEndsAt!.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)),
+      }))
+      .filter((c) => c.daysLeft <= 3)
+      .sort((a, b) => a.daysLeft - b.daysLeft);
+
+    return {
+      periodDays: days,
+      businesses: businessCounts,
+      revenue: { total: totalRevenue, previousPeriodTotal: previousRevenue, percentChange },
+      orders: { total: orders.length },
+      conversations: { total: totalConversations },
+      uniqueCustomers,
+      tokensUsed: totalTokens,
+      conversionRate,
+      negotiation: {
+        totalAttempts: negotiationAttempts,
+        approvedCount,
+        approvalRate: negotiationAttempts > 0 ? Math.round((approvedCount / negotiationAttempts) * 10000) / 100 : 0,
+        avgDiscountPercent,
+      },
+      handovers: { total: handoverCount, handoverRate },
+      highlights: { businessesNearLimit, trialsEndingSoon },
+    };
   }
 
   /** Conversations this month, all-time, and total tokens - one clientId, or every client at once. */

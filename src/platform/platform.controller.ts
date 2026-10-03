@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { PlatformService } from './platform.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PlatformAdminGuard } from '../auth/platform-admin.guard';
@@ -11,6 +11,13 @@ import { ResetPasswordDto } from './dto/reset-password.dto';
 @UseGuards(JwtAuthGuard, PlatformAdminGuard) // Datacrux team only - order matters, JWT first
 export class PlatformController {
   constructor(private readonly platformService: PlatformService) {}
+
+  @Get('overview')
+  getOverview(@Query('days') days?: string) {
+    const parsedDays = days ? parseInt(days, 10) : 30;
+    const safeDays = Number.isFinite(parsedDays) && parsedDays > 0 ? parsedDays : 30;
+    return this.platformService.getOverview(safeDays);
+  }
 
   @Post('clients')
   onboardClient(@Body() dto: OnboardClientDto, @CurrentUser() user: { userId: string }) {
@@ -37,8 +44,6 @@ export class PlatformController {
     return this.platformService.resetPassword(dto.adminUserId, dto.newPassword, user.userId);
   }
 
-  // Testing aid: runs the same daily usage/trial check the 8am cron job
-  // runs on its own, right now, instead of waiting until tomorrow morning.
   @Post('run-notifications-check')
   runNotificationsCheck() {
     return this.platformService.runNotificationsCheck();
