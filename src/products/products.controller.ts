@@ -20,6 +20,12 @@ export class ProductsController {
     return this.productsService.findAll(user.clientId);
   }
 
+  // Note: declared before ':id' so "usage" is never mistaken for a product ID.
+  @Get('usage')
+  getUsage(@CurrentUser() user: { clientId: string }) {
+    return this.productsService.getUsage(user.clientId);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string, @CurrentUser() user: { clientId: string }) {
     return this.productsService.findOne(user.clientId, id);

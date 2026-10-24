@@ -25,6 +25,13 @@ export class OnboardClientDto {
   @Min(0)
   conversationLimit?: number;
 
+  // Omit to use the plan's default (Standard: 20, Premium: 50, Enterprise:
+  // unlimited) - see PlatformService.defaultProductLimitForPlan.
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  productLimit?: number;
+
   @IsIn(['trial', 'active'])
   subscription: string;
 

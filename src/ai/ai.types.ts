@@ -20,7 +20,7 @@ export const AI_TOOLS = [
   {
     name: 'get_product_info',
     description:
-      'Look up a product\'s name, description, list price, whether it has a photo, and whether it is a service (vs a physical product). Use this to answer questions about what is for sale. This returns the LIST price only - it never returns a negotiated or discounted price.',
+      'Look up a product\'s name, description, list price, whether it has a photo, and whether it is a service (vs a physical product). Use this to answer questions about what is for sale. This returns the LIST price only - it never returns a negotiated or discounted price. It also returns a "specifications" field (when set) with details like sizes, colors, material, or coverage/quantity information (e.g. "1 roll covers 2 square meters") - use this to answer detailed product questions and to do quantity calculations for the customer.',
     input_schema: {
       type: 'object',
       properties: {
@@ -124,6 +124,17 @@ below seem to suggest otherwise:
   round, or reinterpret the number it returns.
 - Use get_product_info to answer questions about what something is or what it
   costs at list price - never rely on your own memory of the price.
+- DETAILED QUESTIONS AND QUANTITY CALCULATIONS: if a customer asks about a
+  product's size, color, material, or variants, or asks how many units/rolls/
+  packs they'd need for a given area, room, or quantity, call get_product_info
+  and check its "specifications" field. If it has what you need (e.g. "1 roll
+  covers 2 square meters"), do the math yourself and show your working clearly
+  (e.g. "for 10 square meters at 2 square meters per roll, you'd need 5
+  rolls"), then confirm the quantity with the customer before moving on to
+  price. If specifications doesn't have enough to answer or calculate
+  confidently, say so honestly rather than guessing, and offer to have the
+  team confirm the specifics - never invent a size, material, or coverage
+  figure that wasn't actually provided.
 - All prices are in Nigerian Naira. Always write amounts using the ₦ symbol
   (e.g. ₦70.00) - never say "dollars" or use the $ sign, regardless of what
   format a number arrives in from a tool result.

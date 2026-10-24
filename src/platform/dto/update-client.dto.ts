@@ -18,6 +18,16 @@ export class UpdateClientDto {
   unlimited?: boolean;
 
   @IsOptional()
+  @IsInt()
+  @Min(0)
+  productLimit?: number;
+
+  // Same pattern as `unlimited` above, but for productLimit.
+  @IsOptional()
+  @IsBoolean()
+  productsUnlimited?: boolean;
+
+  @IsOptional()
   @IsIn(['trial', 'active', 'suspended'])
   subscription?: string;
 

@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { CreateProductDto } from './dto/create-product.dto';
@@ -27,11 +27,26 @@ export class ProductsService {
 
   async create(clientId: string, dto: CreateProductDto) {
     this.assertSanePricing(dto.price, dto.minPrice);
+
+    const client = await this.prisma.client.findUnique({
+      where: { id: clientId },
+      select: { productLimit: true },
+    });
+    if (client?.productLimit != null) {
+      const currentCount = await this.prisma.product.count({ where: { clientId } });
+      if (currentCount >= client.productLimit) {
+        throw new ForbiddenException(
+          `You've reached your plan's limit of ${client.productLimit} products. Remove an existing product or ask Datacrux to raise your limit.`,
+        );
+      }
+    }
+
     const product = await this.prisma.product.create({
       data: {
         clientId,
         name: dto.name,
         description: dto.description,
+        specifications: dto.specifications,
         category: dto.category,
         price: dto.price,
         minPrice: dto.minPrice,
@@ -48,15 +63,22 @@ export class ProductsService {
     return this.prisma.product.findMany({ where: { clientId }, orderBy: { createdAt: 'desc' } });
   }
 
+  /** How many products this business has, against its plan's limit (null = unlimited). */
+  async getUsage(clientId: string) {
+    const [client, count] = await Promise.all([
+      this.prisma.client.findUnique({ where: { id: clientId }, select: { productLimit: true } }),
+      this.prisma.product.count({ where: { clientId } }),
+    ]);
+    return { count, limit: client?.productLimit ?? null };
+  }
+
   /**
    * Just the products AMARA is allowed to sell right now - used by the
    * list_products AI tool, which gets called on nearly every conversation
-   * turn. Cached briefly (60 seconds) instead of hitting the database every
-   * single time. This is safe to cache because it's only ever used to tell
-   * a customer what's available and roughly how much things cost - the
-   * moment pricing actually matters (propose_price, confirm_order), those
-   * always go straight to the database via the Negotiation Engine,
-   * regardless of anything cached here.
+   * turn. Cached briefly (60 seconds) instead of hitting the database
+   * every single time. Pricing itself is never read from this cache when
+   * it actually matters (propose_price, confirm_order), those always go
+   * straight to the database via the Negotiation Engine.
    */
   async findAvailable(clientId: string) {
     const cacheKey = this.availableProductsCacheKey(clientId);
@@ -92,9 +114,6 @@ export class ProductsService {
       where: { id },
       data: dto,
     });
-    // The change should be visible to the next customer message right
-    // away, not up to 60 seconds late - so the cache is cleared now
-    // rather than waiting for it to expire on its own.
     await this.redis.del(this.availableProductsCacheKey(clientId));
     return updated;
   }

@@ -19,6 +19,7 @@ model Client {
   subscription  String   @default("trial") // trial | active | suspended
   plan          String?  // standard | premium | enterprise (or "internal" for the Datacrux team's own account)
   conversationLimit Int? // max NEW conversations per calendar month; null = unlimited
+  productLimit  Int?     // max products this business can have; null = unlimited
   trialEndsAt   DateTime? // a trial only expires if this is set; null = never expires
   setupFeePaid  Boolean  @default(false)
   createdAt     DateTime @default(now())
@@ -43,6 +44,7 @@ model Product {
 
   name        String
   description String?
+  specifications String? // free text: sizes, colors, material, coverage/quantity details (e.g. "1 roll covers 2 square meters") - AMARA references this to answer detailed questions and do quantity calculations
   category    String?
   price       Decimal  @db.Decimal(10, 2)
   minPrice    Decimal  @db.Decimal(10, 2)
@@ -170,10 +172,6 @@ model Customer {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  // A phone number identifies one customer per business, but the same
-  // phone number can belong to different customers across different
-  // businesses (tenant isolation) - hence the compound unique constraint
-  // instead of a globally unique phone field.
   @@unique([clientId, phone])
   @@index([clientId])
   @@map("customers")
@@ -185,10 +183,10 @@ model HandoverRequest {
   client         Client   @relation(fields: [clientId], references: [id])
 
   conversationId String?
-  summary        String   // AI-written summary of the conversation so far, for the team taking over
+  summary        String
   customerName   String?
   customerPhone  String?
-  status         String   @default("pending") // pending | contacted | resolved
+  status         String   @default("pending")
 
   createdAt      DateTime @default(now())
 
@@ -201,19 +199,11 @@ model NotificationLog {
   clientId   String
   client     Client   @relation(fields: [clientId], references: [id])
 
-  // usage_80 | usage_100 | trial_ending | trial_expired
   type       String
-  // What makes this notification unique within its type: for usage
-  // types, the calendar month (e.g. "2026-09"); for trial types, the
-  // trial's own end date - so extending a trial naturally allows the
-  // reminder to fire again for the new deadline.
   periodKey  String
 
   sentAt     DateTime @default(now())
 
-  // The real enforcement of "send this at most once" - a duplicate
-  // insert attempt fails, which the code below treats as "already sent,
-  // skip it" rather than as an error.
   @@unique([clientId, type, periodKey])
   @@index([clientId])
   @@map("notification_logs")

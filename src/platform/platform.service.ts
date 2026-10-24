@@ -10,6 +10,15 @@ import { effectiveStatus, startOfMonthLagos } from '../common/subscription.util'
 
 const DEFAULT_TRIAL_DAYS = 7;
 
+// Matches the Pricing page's advertised per-plan product limits. Used only
+// as a starting default at onboarding time - always overridable per
+// business afterward via UpdateClientDto, same as conversationLimit.
+const DEFAULT_PRODUCT_LIMIT_BY_PLAN: Record<string, number | null> = {
+  standard: 20,
+  premium: 50,
+  enterprise: null, // unlimited by default - "custom" per the Pricing page
+};
+
 // Excludes only the Datacrux team's own internal account. Written as an
 // explicit OR (rather than plan: { not: 'internal' }) because a plain
 // not-equal check on a nullable column also excludes rows where plan is
@@ -36,6 +45,9 @@ export class PlatformService {
         ? this.daysFromNow(dto.trialDays ?? DEFAULT_TRIAL_DAYS)
         : null;
 
+    const productLimit =
+      dto.productLimit !== undefined ? dto.productLimit : DEFAULT_PRODUCT_LIMIT_BY_PLAN[dto.plan] ?? null;
+
     const apiKey = 'dcx_' + crypto.randomBytes(24).toString('hex');
     const passwordHash = await bcrypt.hash(dto.ownerPassword, 10);
 
@@ -47,6 +59,7 @@ export class PlatformService {
         subscription: dto.subscription,
         plan: dto.plan,
         conversationLimit: dto.conversationLimit ?? null,
+        productLimit,
         trialEndsAt,
         setupFeePaid: dto.setupFeePaid ?? false,
         users: {
@@ -65,6 +78,7 @@ export class PlatformService {
       plan: dto.plan,
       subscription: dto.subscription,
       conversationLimit: dto.conversationLimit ?? null,
+      productLimit,
       trialDays: dto.subscription === 'trial' ? dto.trialDays ?? DEFAULT_TRIAL_DAYS : null,
     });
 
@@ -76,6 +90,7 @@ export class PlatformService {
       plan: client.plan,
       subscription: client.subscription,
       trialEndsAt: client.trialEndsAt,
+      productLimit: client.productLimit,
     };
   }
 
@@ -86,7 +101,7 @@ export class PlatformService {
       orderBy: { createdAt: 'desc' },
     });
 
-    const usageMap = await this.usageByClient();
+    const [usageMap, productCounts] = await Promise.all([this.usageByClient(), this.productCountByClient()]);
 
     return clients.map((client) => {
       const usage = usageMap.get(client.id);
@@ -100,6 +115,8 @@ export class PlatformService {
         conversationsThisMonth: usage?.thisMonth ?? 0,
         conversationsAllTime: usage?.allTime ?? 0,
         tokensAllTime: usage?.tokens ?? 0,
+        productLimit: client.productLimit,
+        productsUsed: productCounts.get(client.id) ?? 0,
         trialEndsAt: client.trialEndsAt,
         setupFeePaid: client.setupFeePaid,
         ownerEmails: client.users.map((u) => u.email),
@@ -117,7 +134,10 @@ export class PlatformService {
       throw new NotFoundException('Business not found.');
     }
 
-    const usageMap = await this.usageByClient(clientId);
+    const [usageMap, productsUsed] = await Promise.all([
+      this.usageByClient(clientId),
+      this.prisma.product.count({ where: { clientId } }),
+    ]);
     const usage = usageMap.get(clientId);
 
     return {
@@ -130,6 +150,8 @@ export class PlatformService {
       conversationsThisMonth: usage?.thisMonth ?? 0,
       conversationsAllTime: usage?.allTime ?? 0,
       tokensAllTime: usage?.tokens ?? 0,
+      productLimit: client.productLimit,
+      productsUsed,
       trialEndsAt: client.trialEndsAt,
       setupFeePaid: client.setupFeePaid,
       whatsappNumber: client.whatsappNumber,
@@ -153,6 +175,11 @@ export class PlatformService {
       data.conversationLimit = null;
     } else if (dto.conversationLimit !== undefined) {
       data.conversationLimit = dto.conversationLimit;
+    }
+    if (dto.productsUnlimited) {
+      data.productLimit = null;
+    } else if (dto.productLimit !== undefined) {
+      data.productLimit = dto.productLimit;
     }
     if (dto.setupFeePaid !== undefined) data.setupFeePaid = dto.setupFeePaid;
     if (dto.extendTrialDays) {
@@ -238,7 +265,6 @@ export class PlatformService {
       }),
     ]);
 
-    // Businesses by status
     const businessCounts = { active: 0, trial: 0, trialExpired: 0, suspended: 0, total: clients.length };
     for (const c of clients) {
       const status = effectiveStatus(c);
@@ -248,8 +274,6 @@ export class PlatformService {
       else if (status === 'suspended') businessCounts.suspended++;
     }
 
-    // Revenue, and its trend vs. the immediately preceding period of the
-    // same length (e.g. this 30 days vs. the 30 days before that).
     const totalRevenue = orders.reduce((sum, o) => sum + Number(o.finalAmount), 0);
     const previousRevenue = Number(previousPeriodRevenue._sum.finalAmount ?? 0);
     const percentChange =
@@ -271,10 +295,6 @@ export class PlatformService {
     const conversionRate = totalConversations > 0 ? Math.round((orders.length / totalConversations) * 10000) / 100 : 0;
     const handoverRate = totalConversations > 0 ? Math.round((handoverCount / totalConversations) * 10000) / 100 : 0;
 
-    // Highlight: businesses at 80%+ of their monthly limit. Always based
-    // on the current calendar month, independent of the days selector
-    // above - the limit itself is inherently monthly, so "near the
-    // limit" wouldn't mean anything measured over a different window.
     const usageMap = await this.usageByClient();
     const businessesNearLimit = clients
       .filter((c) => c.conversationLimit != null)
@@ -287,7 +307,6 @@ export class PlatformService {
       .filter((c) => c.usedThisMonth / c.limit >= 0.8)
       .sort((a, b) => b.usedThisMonth / b.limit - a.usedThisMonth / a.limit);
 
-    // Highlight: trials ending within 3 days.
     const now = new Date();
     const trialsEndingSoon = clients
       .filter((c) => c.subscription === 'trial' && c.trialEndsAt && c.trialEndsAt.getTime() > now.getTime())
@@ -346,6 +365,19 @@ export class PlatformService {
       const existing = map.get(row.clientId) ?? { thisMonth: 0, allTime: 0, tokens: 0 };
       existing.thisMonth = row._count._all;
       map.set(row.clientId, existing);
+    }
+    return map;
+  }
+
+  /** How many products each business currently has, keyed by clientId. */
+  private async productCountByClient() {
+    const groups = await this.prisma.product.groupBy({
+      by: ['clientId'],
+      _count: { _all: true },
+    });
+    const map = new Map<string, number>();
+    for (const row of groups) {
+      map.set(row.clientId, row._count._all);
     }
     return map;
   }

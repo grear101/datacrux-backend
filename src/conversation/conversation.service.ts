@@ -227,6 +227,7 @@ export class ConversationService {
         id: product.id,
         name: product.name,
         description: product.description,
+        specifications: product.specifications,
         listPrice: Number(product.price),
         available: product.available,
         imageUrl: product.imageUrl,
