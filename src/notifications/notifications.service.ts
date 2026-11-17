@@ -110,6 +110,44 @@ export class NotificationsService {
     await this.sendToClientAdminsAndTeam(clientId, subject, html);
   }
 
+  /**
+   * A reminder TO THE BUSINESS (not the customer - AMARA never collects a
+   * customer email, and there's no automated WhatsApp sending, only a
+   * human-tapped link) that a service is scheduled for tomorrow, so
+   * nothing gets forgotten.
+   */
+  async notifyUpcomingBooking(
+    clientId: string,
+    details: {
+      orderId: string;
+      productName: string;
+      customerName: string;
+      customerPhone: string;
+      scheduledAt: Date;
+    },
+  ) {
+    const when = details.scheduledAt.toLocaleString('en-NG', {
+      timeZone: 'Africa/Lagos',
+      weekday: 'long',
+      day: 'numeric',
+      month: 'short',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+    const subject = `Reminder: ${details.productName} booking tomorrow - ${details.customerName}`;
+    const html = `
+      <p>A reminder about a booking coming up tomorrow.</p>
+      <ul>
+        <li><strong>Service:</strong> ${details.productName}</li>
+        <li><strong>Customer:</strong> ${details.customerName}</li>
+        <li><strong>Phone:</strong> ${details.customerPhone}</li>
+        <li><strong>When:</strong> ${when}</li>
+      </ul>
+      <p style="color:#888;font-size:12px">Order ID: ${details.orderId}</p>
+    `;
+    await this.sendToClientAdmins(clientId, subject, html);
+  }
+
   private async sendToClientAdmins(clientId: string, subject: string, html: string) {
     try {
       const admins = await this.prisma.adminUser.findMany({
@@ -122,15 +160,10 @@ export class NotificationsService {
       }
       await this.sendEmail(recipients, subject, html);
     } catch (err) {
-      // Notifications are a convenience, never something that should be
-      // allowed to break the real action (an order, a handover, a
-      // suspension) that triggered them - so any failure here is logged,
-      // not thrown, and never surfaced to the customer or admin.
       console.warn('Notification failed to send (continuing anyway):', (err as Error).message);
     }
   }
 
-  /** Same as above, but also copies every Datacrux team (superadmin) account. */
   private async sendToClientAdminsAndTeam(clientId: string, subject: string, html: string) {
     try {
       const [clientAdmins, teamAdmins] = await Promise.all([
@@ -141,7 +174,6 @@ export class NotificationsService {
       if (recipients.length === 0) {
         return;
       }
-      // De-duplicated, in case a team account is somehow also a client admin.
       await this.sendEmail([...new Set(recipients)], subject, html);
     } catch (err) {
       console.warn('Notification failed to send (continuing anyway):', (err as Error).message);
@@ -154,19 +186,9 @@ export class NotificationsService {
       console.warn('RESEND_API_KEY is not configured - skipping email notification.');
       return;
     }
-    console.log(`[sendEmail] Attempting to send "${subject}" to: ${to.join(', ')}`);
 
-    // Defaults to Resend's own test sender, which works immediately with
-    // no domain setup - a business's own verified domain can be added
-    // later via NOTIFICATIONS_FROM_EMAIL, with no code changes needed.
     const fromAddress = this.config.get<string>('NOTIFICATIONS_FROM_EMAIL') ?? 'Datacrux AMARA <onboarding@resend.dev>';
 
-    // Test mode: while this is set, EVERY email this service sends goes
-    // to this one address instead of its real recipients - so testing
-    // never accidentally emails a real business, and fake .test seed
-    // addresses never cause a silent failure. The real recipient list is
-    // kept visible in the email itself. Removing this variable (not
-    // changing any code) switches everything back to real delivery.
     const testOverride = this.config.get<string>('NOTIFICATIONS_TEST_OVERRIDE_EMAIL');
     const actualTo = testOverride ? [testOverride] : to;
     const actualHtml = testOverride
@@ -192,7 +214,5 @@ export class NotificationsService {
       console.warn(`[sendEmail] Resend responded with an error: ${response.status} ${errText}`);
       throw new Error(`Resend API error: ${errText}`);
     }
-    const resendResult = await response.json().catch(() => null);
-    console.log(`[sendEmail] Resend accepted it. Response: ${JSON.stringify(resendResult)}`);
   }
 }

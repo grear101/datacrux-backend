@@ -13,6 +13,11 @@ export interface ConfirmOrderInput {
   customerName: string;
   customerPhone: string;
   deliveryAddress: string;
+  // Only meaningful for a service product - "YYYY-MM-DD HH:mm" as AMARA
+  // confirmed it with the customer. Parsed and stored as a real DateTime;
+  // if it's missing or unparseable, the order still goes through (never
+  // block a sale over this), it's just left blank.
+  scheduledAt?: string;
 }
 
 export interface OrderDateFilter {
@@ -44,7 +49,6 @@ export class OrdersService {
         where.createdAt.gte = new Date(`${filter.startDate}T00:00:00.000Z`);
       }
       if (filter.endDate) {
-        // end date is inclusive of the whole day, not just midnight
         where.createdAt.lte = new Date(`${filter.endDate}T23:59:59.999Z`);
       }
     }
@@ -84,6 +88,11 @@ export class OrdersService {
     const finalAmount = authoritativePrice * input.quantity;
     const discountTotal = subtotal - finalAmount;
 
+    // "YYYY-MM-DD HH:mm" from AMARA, parsed as Lagos local time (UTC+1).
+    // Never blocks the order if it's missing or doesn't parse - a booking
+    // with no clean scheduledAt just has nothing to remind about later.
+    const scheduledAt = this.parseScheduledAt(input.scheduledAt);
+
     const order = await this.prisma.order.create({
       data: {
         clientId: input.clientId,
@@ -91,6 +100,7 @@ export class OrdersService {
         customerName: input.customerName,
         customerPhone: input.customerPhone,
         deliveryAddress: input.deliveryAddress,
+        scheduledAt,
         subtotal,
         discountTotal,
         finalAmount,
@@ -124,13 +134,9 @@ export class OrdersService {
       customerName: input.customerName,
       customerPhone: input.customerPhone,
       deliveryAddress: input.deliveryAddress,
+      scheduledAt,
     });
 
-    // Fire off the email notification last, after everything that actually
-    // matters (the order itself, the customer record, the WhatsApp link)
-    // has already succeeded. NotificationsService swallows its own
-    // failures internally, so a broken email provider can never prevent an
-    // order from completing.
     await this.notificationsService.notifyNewOrder(input.clientId, {
       orderId: order.id,
       customerName: input.customerName,
@@ -147,6 +153,17 @@ export class OrdersService {
     };
   }
 
+  private parseScheduledAt(value?: string): Date | null {
+    if (!value) return null;
+    // "YYYY-MM-DD HH:mm" -> treat as Lagos local time (UTC+1 fixed, no DST).
+    const match = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/.exec(value.trim());
+    if (!match) return null;
+    const [, year, month, day, hour, minute] = match;
+    const utcMillis = Date.UTC(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute));
+    const parsed = new Date(utcMillis - 60 * 60 * 1000); // subtract the UTC+1 offset to get true UTC
+    return isNaN(parsed.getTime()) ? null : parsed;
+  }
+
   private buildWhatsappLink(
     whatsappNumber: string | null,
     details: {
@@ -157,6 +174,7 @@ export class OrdersService {
       customerName: string;
       customerPhone: string;
       deliveryAddress: string;
+      scheduledAt: Date | null;
     },
   ): string | null {
     if (!whatsappNumber) return null;
@@ -165,6 +183,9 @@ export class OrdersService {
     if (!digitsOnly) return null;
 
     const total = details.price * details.quantity;
+    const scheduledLine = details.scheduledAt
+      ? `Scheduled for: ${details.scheduledAt.toLocaleString('en-NG', { timeZone: 'Africa/Lagos', dateStyle: 'medium', timeStyle: 'short' })}\n`
+      : '';
     const message =
       `New order via AMARA\n\n` +
       `Order ID: ${details.orderId}\n` +
@@ -174,6 +195,7 @@ export class OrdersService {
       `Total: ₦${total.toLocaleString()}\n\n` +
       `Customer: ${details.customerName}\n` +
       `Phone: ${details.customerPhone}\n` +
+      scheduledLine +
       `Delivery address: ${details.deliveryAddress}`;
 
     return `https://wa.me/${digitsOnly}?text=${encodeURIComponent(message)}`;

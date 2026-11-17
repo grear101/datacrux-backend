@@ -5,6 +5,7 @@ import { NotificationsService } from './notifications.service';
 import { startOfMonthLagos } from '../common/subscription.util';
 
 const USAGE_THRESHOLDS = [100, 80] as const; // check 100 first - if it's hit, 80 is redundant for this run
+const LAGOS_OFFSET_MS = 60 * 60 * 1000;
 
 @Injectable()
 export class NotificationsSchedulerService {
@@ -21,7 +22,7 @@ export class NotificationsSchedulerService {
   // something.
   @Cron('0 8 * * *', { name: 'daily-notifications-check', timeZone: 'Africa/Lagos' })
   async runDailyChecks() {
-    this.logger.log('Running daily usage/trial notification check...');
+    this.logger.log('Running daily usage/trial/booking notification check...');
     const clients = await this.eligibleClients();
 
     for (const client of clients) {
@@ -29,11 +30,16 @@ export class NotificationsSchedulerService {
         await this.checkUsage(client);
         await this.checkTrial(client);
       } catch (err) {
-        // One business having a problem should never stop the rest of
-        // the list from being checked.
         this.logger.warn(`Notification check failed for client ${client.id}: ${(err as Error).message}`);
       }
     }
+
+    try {
+      await this.checkUpcomingBookings();
+    } catch (err) {
+      this.logger.warn(`Booking reminder check failed: ${(err as Error).message}`);
+    }
+
     this.logger.log(`Daily notification check complete (${clients.length} businesses checked).`);
   }
 
@@ -50,14 +56,14 @@ export class NotificationsSchedulerService {
 
   private async checkUsage(client: { id: string; name: string; conversationLimit: number | null }) {
     if (client.conversationLimit == null) {
-      return; // unlimited - nothing to warn about
+      return;
     }
 
     const usedThisMonth = await this.prisma.conversation.count({
       where: { clientId: client.id, createdAt: { gte: startOfMonthLagos() } },
     });
     const percentUsed = (usedThisMonth / client.conversationLimit) * 100;
-    const periodKey = startOfMonthLagos().toISOString().slice(0, 7); // "2026-09"
+    const periodKey = startOfMonthLagos().toISOString().slice(0, 7);
 
     for (const threshold of USAGE_THRESHOLDS) {
       if (percentUsed < threshold) {
@@ -75,27 +81,23 @@ export class NotificationsSchedulerService {
         limit: client.conversationLimit,
       });
       await this.logSent(client.id, type, periodKey);
-      break; // don't also send the lower threshold in the same run
+      break;
     }
   }
 
   private async checkTrial(client: { id: string; name: string; subscription: string; trialEndsAt: Date | null }) {
     if (client.subscription !== 'trial' || !client.trialEndsAt) {
-      this.logger.log(`[trial-check] ${client.name}: skipped (subscription=${client.subscription}, trialEndsAt=${client.trialEndsAt})`);
       return;
     }
 
-    const periodKey = client.trialEndsAt.toISOString(); // a new trial end date = a fresh set of reminders
+    const periodKey = client.trialEndsAt.toISOString();
     const now = new Date();
     const daysLeft = Math.ceil((client.trialEndsAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-    this.logger.log(`[trial-check] ${client.name}: trialEndsAt=${client.trialEndsAt.toISOString()}, now=${now.toISOString()}, daysLeft=${daysLeft}`);
 
     if (client.trialEndsAt.getTime() < now.getTime()) {
       if (await this.alreadyLogged(client.id, 'trial_expired', periodKey)) {
-        this.logger.log(`[trial-check] ${client.name}: trial_expired already logged for this period, skipping`);
         return;
       }
-      this.logger.log(`[trial-check] ${client.name}: sending trial_expired email now`);
       await this.notificationsService.notifyTrialExpired(client.id, client.name);
       await this.logSent(client.id, 'trial_expired', periodKey);
       return;
@@ -103,14 +105,50 @@ export class NotificationsSchedulerService {
 
     if (daysLeft <= 3) {
       if (await this.alreadyLogged(client.id, 'trial_ending', periodKey)) {
-        this.logger.log(`[trial-check] ${client.name}: trial_ending already logged for this period, skipping`);
         return;
       }
-      this.logger.log(`[trial-check] ${client.name}: sending trial_ending email now (daysLeft=${daysLeft})`);
       await this.notificationsService.notifyTrialEnding(client.id, client.name, daysLeft, client.trialEndsAt);
       await this.logSent(client.id, 'trial_ending', periodKey);
-    } else {
-      this.logger.log(`[trial-check] ${client.name}: daysLeft=${daysLeft} is above the 3-day threshold, nothing to send`);
+    }
+  }
+
+  /**
+   * Finds confirmed service orders scheduled for "tomorrow" (calendar day,
+   * Lagos time) and reminds the business once each, regardless of plan/
+   * subscription status - a business that's paid for a real booking
+   * should always get reminded about it, even if e.g. mid-trial-expiry.
+   */
+  private async checkUpcomingBookings() {
+    const now = new Date();
+    const lagosNow = new Date(now.getTime() + LAGOS_OFFSET_MS);
+    const tomorrowLagos = new Date(Date.UTC(lagosNow.getUTCFullYear(), lagosNow.getUTCMonth(), lagosNow.getUTCDate() + 1));
+    const dayAfterLagos = new Date(Date.UTC(lagosNow.getUTCFullYear(), lagosNow.getUTCMonth(), lagosNow.getUTCDate() + 2));
+    // Convert that Lagos-midnight boundary back to the equivalent real UTC instant.
+    const windowStart = new Date(tomorrowLagos.getTime() - LAGOS_OFFSET_MS);
+    const windowEnd = new Date(dayAfterLagos.getTime() - LAGOS_OFFSET_MS);
+
+    const bookings = await this.prisma.order.findMany({
+      where: {
+        status: 'confirmed',
+        scheduledAt: { gte: windowStart, lt: windowEnd },
+      },
+      include: { items: { include: { product: true } } },
+    });
+
+    for (const order of bookings) {
+      const alreadySent = await this.alreadyLogged(order.clientId, 'booking_reminder', order.id);
+      if (alreadySent) {
+        continue;
+      }
+      const productName = order.items[0]?.product?.name ?? 'Service';
+      await this.notificationsService.notifyUpcomingBooking(order.clientId, {
+        orderId: order.id,
+        productName,
+        customerName: order.customerName ?? 'Unknown customer',
+        customerPhone: order.customerPhone ?? '',
+        scheduledAt: order.scheduledAt as Date,
+      });
+      await this.logSent(order.clientId, 'booking_reminder', order.id);
     }
   }
 
@@ -122,10 +160,6 @@ export class NotificationsSchedulerService {
   }
 
   private async logSent(clientId: string, type: string, periodKey: string) {
-    // If two requests somehow raced and both tried to log the same
-    // (clientId, type, periodKey) at once, the database's own unique
-    // constraint - not this check - is the real guarantee against a
-    // duplicate email ever being logged as sent twice.
     try {
       await this.prisma.notificationLog.create({ data: { clientId, type, periodKey } });
     } catch {

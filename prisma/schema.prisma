@@ -12,15 +12,15 @@ datasource db {
 model Client {
   id            String   @id @default(cuid())
   name          String
-  apiKey        String?  @unique // public-facing key for the customer chat widget - not a login credential
-  whatsappNumber String? // the business's own WhatsApp number, digits only with country code (e.g. 2348012345678) - where order summaries get sent via wa.me links
+  apiKey        String?  @unique
+  whatsappNumber String?
   brandingJson  Json     @default("{}")
   aiSettings    Json     @default("{}")
-  subscription  String   @default("trial") // trial | active | suspended
-  plan          String?  // standard | premium | enterprise (or "internal" for the Datacrux team's own account)
-  conversationLimit Int? // max NEW conversations per calendar month; null = unlimited
-  productLimit  Int?     // max products this business can have; null = unlimited
-  trialEndsAt   DateTime? // a trial only expires if this is set; null = never expires
+  subscription  String   @default("trial")
+  plan          String?
+  conversationLimit Int?
+  productLimit  Int?
+  trialEndsAt   DateTime?
   setupFeePaid  Boolean  @default(false)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -44,13 +44,13 @@ model Product {
 
   name        String
   description String?
-  specifications String? // free text: sizes, colors, material, coverage/quantity details (e.g. "1 roll covers 2 square meters") - AMARA references this to answer detailed questions and do quantity calculations
+  specifications String?
   category    String?
   price       Decimal  @db.Decimal(10, 2)
   minPrice    Decimal  @db.Decimal(10, 2)
   available   Boolean  @default(true)
-  imageUrl    String?  // hosted photo of the product/service, shown to customers in chat
-  isService   Boolean  @default(false) // true = a service (ask for date/time instead of delivery address)
+  imageUrl    String?
+  isService   Boolean  @default(false)
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -67,10 +67,10 @@ model Conversation {
   client       Client   @relation(fields: [clientId], references: [id])
 
   customerId   String?
-  status       String   @default("active") // active | completed (order placed) | closed
+  status       String   @default("active")
   transcript   Json     @default("[]")
   tokenUsage   Int      @default(0)
-  messageCount Int      @default(0) // customer messages so far, used to cap runaway sessions
+  messageCount Int      @default(0)
 
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -94,6 +94,10 @@ model Order {
   customerPhone  String?
   customerEmail  String?
   deliveryAddress String?
+  // The actual structured date/time for a service booking (null for a
+  // physical-product order). Kept separate from deliveryAddress so
+  // bookings can be queried/sorted properly instead of parsed from text.
+  scheduledAt    DateTime?
 
   items          OrderItem[]
 
@@ -132,7 +136,7 @@ model AdminUser {
 
   email        String   @unique
   passwordHash String
-  role         String   @default("admin") // owner | admin | superadmin (Datacrux team only)
+  role         String   @default("admin")
   lastLoginAt  DateTime?
 
   createdAt    DateTime @default(now())
@@ -164,7 +168,7 @@ model Customer {
   clientId     String
   client       Client   @relation(fields: [clientId], references: [id])
 
-  phone        String   // digits only, used to look up returning customers
+  phone        String
   name         String?
   orderCount   Int      @default(0)
   lastOrderAt  DateTime?
