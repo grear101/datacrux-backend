@@ -14,6 +14,10 @@ model Client {
   name          String
   apiKey        String?  @unique
   whatsappNumber String?
+  // {logoUrl?: string, accentColor?: string} - used by the storefront
+  // header/buttons. Left as a flexible JSON field (reused, not new)
+  // rather than dedicated columns, since this is purely cosmetic and may
+  // grow more fields later without another migration.
   brandingJson  Json     @default("{}")
   aiSettings    Json     @default("{}")
   subscription  String   @default("trial")
@@ -22,6 +26,15 @@ model Client {
   productLimit  Int?
   trialEndsAt   DateTime?
   setupFeePaid  Boolean  @default(false)
+  // Storefront - Premium/Enterprise only (re-checked on every public
+  // read, not just at creation, so a downgrade takes effect immediately).
+  // storeSlug being set is what "storefront enabled" means.
+  storeSlug     String?  @unique
+  storeTagline  String?
+  // {[platformKey]: trackingId} - see src/storefront/tracking-platforms.ts
+  // for the list of supported platforms. A map, not dedicated columns, so
+  // adding a new platform later never needs another migration.
+  trackingConfig Json    @default("{}")
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -49,7 +62,8 @@ model Product {
   price       Decimal  @db.Decimal(10, 2)
   minPrice    Decimal  @db.Decimal(10, 2)
   available   Boolean  @default(true)
-  imageUrl    String?
+  imageUrl    String?  // the single "cover" photo - used in chat/widget, and as the storefront card's main image
+  imageUrls   Json     @default("[]") // extra gallery photos (string[]), shown on the storefront's product view
   isService   Boolean  @default(false)
 
   createdAt   DateTime @default(now())
@@ -94,9 +108,6 @@ model Order {
   customerPhone  String?
   customerEmail  String?
   deliveryAddress String?
-  // The actual structured date/time for a service booking (null for a
-  // physical-product order). Kept separate from deliveryAddress so
-  // bookings can be queried/sorted properly instead of parsed from text.
   scheduledAt    DateTime?
 
   items          OrderItem[]

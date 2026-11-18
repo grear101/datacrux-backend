@@ -14,8 +14,6 @@ export class ProductsService {
   ) {}
 
   private assertSanePricing(price: number, minPrice: number) {
-    // Same principle as the Negotiation Engine: pricing rules are enforced
-    // server-side, not trusted from whatever the admin panel UI sends.
     if (minPrice > price) {
       throw new BadRequestException('minPrice cannot be greater than price.');
     }
@@ -52,6 +50,7 @@ export class ProductsService {
         minPrice: dto.minPrice,
         available: dto.available ?? true,
         imageUrl: dto.imageUrl,
+        imageUrls: dto.imageUrls ?? [],
         isService: dto.isService ?? false,
       },
     });
@@ -63,7 +62,6 @@ export class ProductsService {
     return this.prisma.product.findMany({ where: { clientId }, orderBy: { createdAt: 'desc' } });
   }
 
-  /** How many products this business has, against its plan's limit (null = unlimited). */
   async getUsage(clientId: string) {
     const [client, count] = await Promise.all([
       this.prisma.client.findUnique({ where: { id: clientId }, select: { productLimit: true } }),
@@ -72,14 +70,6 @@ export class ProductsService {
     return { count, limit: client?.productLimit ?? null };
   }
 
-  /**
-   * Just the products AMARA is allowed to sell right now - used by the
-   * list_products AI tool, which gets called on nearly every conversation
-   * turn. Cached briefly (60 seconds) instead of hitting the database
-   * every single time. Pricing itself is never read from this cache when
-   * it actually matters (propose_price, confirm_order), those always go
-   * straight to the database via the Negotiation Engine.
-   */
   async findAvailable(clientId: string) {
     const cacheKey = this.availableProductsCacheKey(clientId);
     const cached = await this.redis.getJson<any[]>(cacheKey);
@@ -104,7 +94,7 @@ export class ProductsService {
   }
 
   async update(clientId: string, id: string, dto: UpdateProductDto) {
-    const existing = await this.findOne(clientId, id); // also enforces tenant isolation
+    const existing = await this.findOne(clientId, id);
 
     const nextPrice = dto.price ?? Number(existing.price);
     const nextMinPrice = dto.minPrice ?? Number(existing.minPrice);
@@ -112,20 +102,18 @@ export class ProductsService {
 
     const updated = await this.prisma.product.update({
       where: { id },
-      data: dto,
+      data: dto as any,
     });
     await this.redis.del(this.availableProductsCacheKey(clientId));
     return updated;
   }
 
   async remove(clientId: string, id: string) {
-    await this.findOne(clientId, id); // enforces tenant isolation before touching anything
+    await this.findOne(clientId, id);
 
     const orderItemCount = await this.prisma.orderItem.count({ where: { productId: id } });
     let result;
     if (orderItemCount > 0) {
-      // Never hard-delete a product with real order history - just hide it
-      // from new sales instead, so past orders still make sense.
       result = await this.prisma.product.update({ where: { id }, data: { available: false } });
     } else {
       result = await this.prisma.product.delete({ where: { id } });

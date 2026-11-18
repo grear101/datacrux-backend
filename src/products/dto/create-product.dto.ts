@@ -1,4 +1,4 @@
-import { IsBoolean, IsNotEmpty, IsNumber, IsOptional, IsPositive, IsString } from 'class-validator';
+import { IsArray, IsBoolean, IsNotEmpty, IsNumber, IsOptional, IsPositive, IsString } from 'class-validator';
 
 export class CreateProductDto {
   @IsString()
@@ -9,10 +9,6 @@ export class CreateProductDto {
   @IsString()
   description?: string;
 
-  // Free text: sizes, colors, material, coverage/quantity details (e.g.
-  // "1 roll covers 2 square meters") - separate from the marketing-style
-  // description above, so AMARA has a clear place to look for detailed
-  // questions and quantity calculations.
   @IsOptional()
   @IsString()
   specifications?: string;
@@ -36,6 +32,13 @@ export class CreateProductDto {
   @IsOptional()
   @IsString()
   imageUrl?: string;
+
+  // Extra gallery photos, on top of imageUrl (the cover photo) - shown on
+  // the storefront's product detail.
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  imageUrls?: string[];
 
   @IsOptional()
   @IsBoolean()

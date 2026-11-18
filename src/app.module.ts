@@ -20,14 +20,12 @@ import { OrdersModule } from './orders/orders.module';
 import { HandoversModule } from './handovers/handovers.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { PlatformModule } from './platform/platform.module';
+import { StorefrontModule } from './storefront/storefront.module';
 
 @Module({
   imports: [
     SentryModule.forRoot(),
     ConfigModule.forRoot({ isGlobal: true }),
-    // Enables @Cron() decorators anywhere in the app - the daily usage/
-    // trial notification check (in NotificationsSchedulerService) needs
-    // this registered here to actually run.
     ScheduleModule.forRoot(),
     ThrottlerModule.forRoot([
       {
@@ -49,6 +47,7 @@ import { PlatformModule } from './platform/platform.module';
     HandoversModule,
     AnalyticsModule,
     PlatformModule,
+    StorefrontModule,
   ],
   controllers: [AppController],
   providers: [
